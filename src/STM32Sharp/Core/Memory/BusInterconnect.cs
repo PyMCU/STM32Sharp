@@ -36,6 +36,12 @@ public sealed unsafe class BusInterconnect : IMemoryBus, IDisposable
     private readonly RandomAccessMemory _sram;
     private readonly PeripheralBus _peripherals = new();
 
+    /// <summary>
+    /// When true, writes to the Flash region program the Flash array (bits can only clear,
+    /// 1→0, mirroring real NOR Flash). The FLASH peripheral sets this while CR.PG is active.
+    /// </summary>
+    public bool FlashWriteEnabled;
+
     private bool _disposed;
 
     /// <param name="flashSizeBytes">Flash size — must be a power of two (default 128 KB, STM32G071).</param>
@@ -74,6 +80,13 @@ public sealed unsafe class BusInterconnect : IMemoryBus, IDisposable
         image.CopyTo(dst);
     }
 
+    /// <summary>Erase a Flash region to 0xFF (used by the FLASH peripheral's page erase).</summary>
+    public void EraseFlash(uint offset, uint length)
+    {
+        if (offset + length > FlashSize) return;
+        new Span<byte>(PtrFlash + offset, (int)length).Fill(0xFF);
+    }
+
     // --- READ ---
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -110,7 +123,16 @@ public sealed unsafe class BusInterconnect : IMemoryBus, IDisposable
     {
         var region = address >> 28;
         if (region == REGION_SRAM) { PtrSram[address & MaskSram] = value; return; }
-        if (region == REGION_FLASH) return; // Flash is read-only on the code bus (program via FLASH peripheral)
+        if (region == REGION_FLASH)
+        {
+            // Flash is read-only on the code bus unless the FLASH peripheral enabled programming.
+            if (FlashWriteEnabled)
+            {
+                var p = PtrFlash + (address & MaskFlash);
+                *p &= value; // NOR Flash: programming can only clear bits (1→0)
+            }
+            return;
+        }
         _peripherals.WriteByte(address, value);
     }
 
@@ -119,7 +141,16 @@ public sealed unsafe class BusInterconnect : IMemoryBus, IDisposable
     {
         var region = address >> 28;
         if (region == REGION_SRAM) { Unsafe.WriteUnaligned(PtrSram + (address & MaskSram), value); return; }
-        if (region == REGION_FLASH) return;
+        if (region == REGION_FLASH)
+        {
+            if (FlashWriteEnabled)
+            {
+                var p = PtrFlash + (address & MaskFlash);
+                var cur = Unsafe.ReadUnaligned<ushort>(p);
+                Unsafe.WriteUnaligned(p, (ushort)(cur & value));
+            }
+            return;
+        }
         _peripherals.WriteHalfWord(address, value);
     }
 
@@ -128,7 +159,16 @@ public sealed unsafe class BusInterconnect : IMemoryBus, IDisposable
     {
         var region = address >> 28;
         if (region == REGION_SRAM) { Unsafe.WriteUnaligned(PtrSram + (address & MaskSram), value); return; }
-        if (region == REGION_FLASH) return;
+        if (region == REGION_FLASH)
+        {
+            if (FlashWriteEnabled)
+            {
+                var p = PtrFlash + (address & MaskFlash);
+                var cur = Unsafe.ReadUnaligned<uint>(p);
+                Unsafe.WriteUnaligned(p, cur & value);
+            }
+            return;
+        }
         _peripherals.WriteWord(address, value);
     }
 

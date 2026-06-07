@@ -32,6 +32,9 @@ public sealed class GpioPortPeripheral : IMemoryMappedDevice
     /// <summary>Raised when an output pin level changes: (pin 0–15, level high?).</summary>
     public Action<int, bool>? OnPinChange;
 
+    /// <summary>Raised when an external input level changes (used to drive EXTI edges).</summary>
+    public Action<int, bool>? OnInputChange;
+
     private uint _moder;
     private uint _otyper;
     private uint _ospeedr;
@@ -49,7 +52,9 @@ public sealed class GpioPortPeripheral : IMemoryMappedDevice
     public void SetInput(int pin, bool high)
     {
         var bit = 1u << pin;
+        var was = (_externalIdr & bit) != 0;
         if (high) _externalIdr |= bit; else _externalIdr &= ~bit;
+        if (was != high) OnInputChange?.Invoke(pin, high);
     }
 
     /// <summary>Current output level of a pin (reads ODR bit).</summary>
