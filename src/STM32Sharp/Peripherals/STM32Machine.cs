@@ -8,10 +8,12 @@ using STM32.Peripherals.Gpio;
 using STM32.Peripherals.I2c;
 using STM32.Peripherals.Ppb;
 using STM32.Peripherals.Rcc;
+using STM32.Peripherals.Rtc;
 using STM32.Peripherals.Spi;
 using STM32.Peripherals.SysCfg;
 using STM32.Peripherals.Timer;
 using STM32.Peripherals.Usart;
+using STM32.Peripherals.Watchdog;
 
 namespace STM32.Peripherals;
 
@@ -49,6 +51,9 @@ public sealed class STM32Machine : IDisposable
     private const uint I2C2_BASE = 0x40005800;
     private const uint ADC_BASE = 0x40012400;
     private const uint DMA1_BASE = 0x40020000;
+    private const uint RTC_BASE = 0x40002800;
+    private const uint WWDG_BASE = 0x40002C00;
+    private const uint IWDG_BASE = 0x40003000;
 
     // STM32G0 NVIC IRQ numbers (RM0444 §11.3).
     private const int IRQ_TIM2 = 15;
@@ -82,6 +87,15 @@ public sealed class STM32Machine : IDisposable
     public I2cPeripheral I2c2 { get; }
     public AdcPeripheral Adc { get; }
     public DmaPeripheral Dma { get; }
+    public RtcPeripheral Rtc { get; }
+    public IwdgPeripheral Iwdg { get; }
+    public WwdgPeripheral Wwdg { get; }
+
+    /// <summary>Number of watchdog-triggered system resets since construction.</summary>
+    public int WatchdogResetCount { get; private set; }
+
+    /// <summary>Host hook invoked when a watchdog (IWDG/WWDG) times out and resets the system.</summary>
+    public Action? OnWatchdogReset;
 
     /// <summary>Cycles elapsed in the most recent <see cref="Run"/> batch.</summary>
     public long LastElapsedCycles { get; private set; }
@@ -161,7 +175,26 @@ public sealed class STM32Machine : IDisposable
         Dma = new DmaPeripheral(Bus) { RaiseIrq = Cpu.SetInterrupt };
         Bus.RegisterPeripheral(DMA1_BASE, Dma);
 
-        _tickables = [Ppb, Tim2, Tim3];
+        // ── RTC ─────────────────────────────────────────────────────────
+        Rtc = new RtcPeripheral { RaiseIrq = Cpu.SetInterrupt };
+        Bus.RegisterPeripheral(RTC_BASE, Rtc);
+
+        // ── Watchdogs ───────────────────────────────────────────────────
+        Iwdg = new IwdgPeripheral { OnTimeout = HandleWatchdogReset };
+        Wwdg = new WwdgPeripheral { OnTimeout = HandleWatchdogReset };
+        Bus.RegisterPeripheral(IWDG_BASE, Iwdg);
+        Bus.RegisterPeripheral(WWDG_BASE, Wwdg);
+
+        _tickables = [Ppb, Tim2, Tim3, Rtc, Iwdg, Wwdg];
+    }
+
+    private void HandleWatchdogReset()
+    {
+        WatchdogResetCount++;
+        OnWatchdogReset?.Invoke();
+        // Model the real chip: a watchdog timeout resets the core (re-reads SP/PC from the vector
+        // table). Tick runs at the end of a Run batch, so resetting here is safe for the next batch.
+        Cpu.Reset();
     }
 
     /// <summary>
