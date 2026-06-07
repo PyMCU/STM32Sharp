@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/STM32Sharp/STM32Sharp.csproj" />
+    <Project Path="src/STM32.TestKit/STM32.TestKit.csproj" />
+    <Project Path="src/STM32Sharp.Runner/STM32Sharp.Runner.csproj" />
+    <Project Path="src/STM32Sharp.Demo/STM32Sharp.Demo.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/STM32Sharp.Tests/STM32Sharp.Tests.csproj" />
+  </Folder>
+</Solution>

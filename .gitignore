@@ -1,0 +1,32 @@
+# --- C# / .NET Core Standard ---
+[Bb]in/
+[Oo]bj/
+.config/
+*.user
+*.userosscache
+*.sln.docstates
+
+# --- JetBrains Rider / IntelliJ ---
+.idea/
+*.dotCover
+
+# --- Visual Studio ---
+.vs/
+*.suo
+*.userprefs
+
+# --- NuGet ---
+packages/
+*.nupkg
+
+# --- Test Results ---
+TestResults/
+*.trx
+
+# --- Firmware build artifacts (keep .bin under version control for offline tests) ---
+firmware/**/*.elf
+firmware/**/*.o
+
+# --- OS Generated Files ---
+.DS_Store
+Thumbs.db

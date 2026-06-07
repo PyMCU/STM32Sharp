@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>stm32sharp-demo</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\STM32Sharp\STM32Sharp.csproj" />
+    <ProjectReference Include="..\STM32.TestKit\STM32.TestKit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\firmware\blink\blink.bin" Link="Firmware\blink.bin" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\firmware\blink\blink.bin')" />
+    <None Include="..\..\firmware\uart_echo\uart_echo.bin" Link="Firmware\uart_echo.bin" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\firmware\uart_echo\uart_echo.bin')" />
+  </ItemGroup>
+</Project>

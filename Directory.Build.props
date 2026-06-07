@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <Authors>Iván Montiel Cardona</Authors>
+    <Company>begeistert</Company>
+    <RepositoryUrl>https://github.com/PyMCU/STM32Sharp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/PyMCU/STM32Sharp</PackageProjectUrl>
+    <PackageTags>stm32;stm32g0;emulator;cortex-m0plus;microcontroller;simulation</PackageTags>
+    <Copyright>Copyright © 2024-2026 Iván Montiel Cardona</Copyright>
+    <Deterministic>true</Deterministic>
+    <!-- Shared across all projects -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>

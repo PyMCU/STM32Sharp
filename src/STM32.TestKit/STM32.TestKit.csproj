@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>STM32Sharp.TestKit</PackageId>
+    <Description>Fluent, deterministic test harness for the STM32Sharp emulator: run firmware, probe UART/GPIO, assert behaviour.</Description>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\STM32Sharp\STM32Sharp.csproj" />
+  </ItemGroup>
+</Project>
