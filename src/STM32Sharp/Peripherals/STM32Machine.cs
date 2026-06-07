@@ -1,10 +1,14 @@
 using STM32.Core.Cpu;
 using STM32.Core.Memory;
+using STM32.Peripherals.Adc;
+using STM32.Peripherals.Dma;
 using STM32.Peripherals.Exti;
 using STM32.Peripherals.Flash;
 using STM32.Peripherals.Gpio;
+using STM32.Peripherals.I2c;
 using STM32.Peripherals.Ppb;
 using STM32.Peripherals.Rcc;
+using STM32.Peripherals.Spi;
 using STM32.Peripherals.SysCfg;
 using STM32.Peripherals.Timer;
 using STM32.Peripherals.Usart;
@@ -39,6 +43,12 @@ public sealed class STM32Machine : IDisposable
     private const uint USART2_BASE = 0x40004400;
     private const uint TIM2_BASE = 0x40000000;
     private const uint TIM3_BASE = 0x40000400;
+    private const uint SPI1_BASE = 0x40013000;
+    private const uint SPI2_BASE = 0x40003800;
+    private const uint I2C1_BASE = 0x40005400;
+    private const uint I2C2_BASE = 0x40005800;
+    private const uint ADC_BASE = 0x40012400;
+    private const uint DMA1_BASE = 0x40020000;
 
     // STM32G0 NVIC IRQ numbers (RM0444 §11.3).
     private const int IRQ_TIM2 = 15;
@@ -66,6 +76,12 @@ public sealed class STM32Machine : IDisposable
     public UsartPeripheral Usart2 { get; }
     public TimerPeripheral Tim2 { get; }
     public TimerPeripheral Tim3 { get; }
+    public SpiPeripheral Spi1 { get; }
+    public SpiPeripheral Spi2 { get; }
+    public I2cPeripheral I2c1 { get; }
+    public I2cPeripheral I2c2 { get; }
+    public AdcPeripheral Adc { get; }
+    public DmaPeripheral Dma { get; }
 
     /// <summary>Cycles elapsed in the most recent <see cref="Run"/> batch.</summary>
     public long LastElapsedCycles { get; private set; }
@@ -124,6 +140,26 @@ public sealed class STM32Machine : IDisposable
         Tim3 = new TimerPeripheral("TIM3", IRQ_TIM3) { RaiseIrq = Cpu.SetInterrupt };
         Bus.RegisterPeripheral(TIM2_BASE, Tim2);
         Bus.RegisterPeripheral(TIM3_BASE, Tim3);
+
+        // ── SPI ─────────────────────────────────────────────────────────
+        Spi1 = new SpiPeripheral("SPI1");
+        Spi2 = new SpiPeripheral("SPI2");
+        Bus.RegisterPeripheral(SPI1_BASE, Spi1);
+        Bus.RegisterPeripheral(SPI2_BASE, Spi2);
+
+        // ── I2C ─────────────────────────────────────────────────────────
+        I2c1 = new I2cPeripheral("I2C1");
+        I2c2 = new I2cPeripheral("I2C2");
+        Bus.RegisterPeripheral(I2C1_BASE, I2c1);
+        Bus.RegisterPeripheral(I2C2_BASE, I2c2);
+
+        // ── ADC ─────────────────────────────────────────────────────────
+        Adc = new AdcPeripheral();
+        Bus.RegisterPeripheral(ADC_BASE, Adc);
+
+        // ── DMA ─────────────────────────────────────────────────────────
+        Dma = new DmaPeripheral(Bus) { RaiseIrq = Cpu.SetInterrupt };
+        Bus.RegisterPeripheral(DMA1_BASE, Dma);
 
         _tickables = [Ppb, Tim2, Tim3];
     }

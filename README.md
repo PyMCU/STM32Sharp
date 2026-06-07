@@ -16,7 +16,8 @@ src/
   STM32Sharp/                 librería del emulador
     Core/Cpu/                 CortexM0Plus, InstructionDecoder (LUT O(1)), Registers, Instructions/
     Core/Memory/              BusInterconnect, PeripheralBus, Ram, interfaces
-    Peripherals/              STM32Machine + Ppb (NVIC/SysTick/SCB), Rcc, Flash, Gpio, Usart
+    Peripherals/              STM32Machine + Ppb (NVIC/SysTick/SCB), Rcc, Flash, SysCfg, Exti,
+                              Gpio, Usart, Timer, Spi, I2c, Adc, Dma
   STM32.TestKit/              arnés de pruebas fluido (STM32TestSimulation + probes UART/GPIO)
   STM32Sharp.Runner/          CLI headless para CI (stm32 <bin> --expect-text ...)
   STM32Sharp.Demo/            demo interactiva (blink + UART echo)
@@ -31,7 +32,7 @@ firmware/                     firmware bare-metal de ejemplo (compilado con arm-
 | `0x0` | `0x0000_0000` | Boot alias → espejo de Flash (BOOT0 = 0) |
 | `0x0` | `0x0800_0000` | Flash (fast-path por puntero) |
 | `0x2` | `0x2000_0000` | SRAM (fast-path por puntero) |
-| `0x4` | `0x4000_0000` | Periféricos APB/AHB (RCC, FLASH, USART…) |
+| `0x4` | `0x4000_0000` | Periféricos APB/AHB (RCC, FLASH, SYSCFG, EXTI, TIM, USART, SPI, I2C, ADC, DMA…) |
 | `0x5` | `0x5000_0000` | GPIO (IOPORT) |
 | `0xE` | `0xE000_0000` | PPB: NVIC, SysTick, SCB |
 
@@ -76,8 +77,12 @@ Requiere el [Arm GNU Toolchain](https://developer.arm.com/downloads/-/arm-gnu-to
 
 - ✅ Núcleo Cortex-M0+ (Thumb-1 completo, NVIC, SysTick, excepciones) — ISA validado con 267 tests.
 - ✅ Boot de firmware real compilado con GCC (RCC/PLL, Flash, GPIO, USART).
+- ✅ Periféricos: NVIC/SysTick/SCB, RCC, FLASH (unlock/erase/program), SYSCFG, EXTI, GPIO, USART,
+  TIM2/TIM3, SPI1/SPI2, I2C1/I2C2, ADC, DMA1.
 - ✅ TestKit + Runner + Demo.
-- ⏳ Pendiente: EXTI, TIM avanzados, SPI, I2C, ADC, DMA, programación/borrado de Flash.
+- ✅ 323 tests en verde.
+- ⏳ Pendiente: timers avanzados (captura/comparación/PWM), I2C/SPI con interrupciones y DMA
+  request-driven, RTC, watchdogs.
 
 ## Licencia
 
