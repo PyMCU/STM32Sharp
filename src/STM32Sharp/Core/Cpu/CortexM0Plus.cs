@@ -113,7 +113,16 @@ public sealed unsafe class CortexM0Plus
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public void Run(int instructions)
+    /// <summary>Execute up to <paramref name="instructions"/> instructions (time-unbounded).</summary>
+    public void Run(int instructions) => RunBounded(instructions, long.MaxValue);
+
+    /// <summary>
+    /// Execute instructions until either <paramref name="maxInstructions"/> have run or the cycle
+    /// counter reaches <paramref name="targetCycle"/>, whichever comes first. Returns the number of
+    /// instructions executed. This is the primitive the event-driven engine uses to advance the CPU
+    /// only up to the next scheduled clock event, so peripherals fire at the right instant.
+    /// </summary>
+    public int RunBounded(int maxInstructions, long targetCycle)
     {
         var decoder = _decoder;
 
@@ -121,10 +130,13 @@ public sealed unsafe class CortexM0Plus
         var fetchMask = _fetchMask;
         var regionId = _currentRegionId;
 
-        while (instructions-- > 0)
+        var executed = 0;
+        while (executed < maxInstructions && Cycles < targetCycle)
         {
+            executed++;
+
             // ARMv6-M §B1.5.13 Lockup: CPU halts when HardFault fires in HardFault/NMI handler.
-            if (IsLockedUp) return;
+            if (IsLockedUp) break;
 
             // Interrupt check — predictable branch (nearly always not taken)
             if (Registers.InterruptsUpdated)
@@ -139,16 +151,11 @@ public sealed unsafe class CortexM0Plus
                 }
             }
 
-            // WFI/WFE sleep: bail out of the current batch, crediting the unused
-            // instruction budget as elapsed cycles so the outer Machine.Run can
-            // advance time-aware peripherals (Timer, Watchdog, ...) and let an
-            // alarm IRQ wake us on the next batch.  Without this, a CPU that
-            // sleeps on the very first instruction of a batch produces delta=0
-            // and the simulation deadlocks: the timer never ticks → the alarm
-            // never fires → WFE never returns.
+            // WFI/WFE sleep. With a finite target (the engine advancing to the next clock event), jump
+            // the clock straight to that event so the peripheral that owns it fires and can wake us;
+            // otherwise (open-ended Run) credit the unused budget so the outer loop can still advance.
             if (Registers.Waiting)
             {
-                // SEV from another core (or FIFO-write) sets EventRegistered; wake WFE.
                 if (Registers.EventRegistered)
                 {
                     Registers.Waiting = false;
@@ -156,8 +163,9 @@ public sealed unsafe class CortexM0Plus
                 }
                 else
                 {
-                    Cycles += (uint)(instructions + 1);
-                    return;
+                    if (targetCycle != long.MaxValue) Cycles = targetCycle;
+                    else Cycles += (uint)(maxInstructions - executed + 1);
+                    break;
                 }
             }
 
@@ -177,7 +185,7 @@ public sealed unsafe class CortexM0Plus
                 {
                     // PC landed in an un-executable region — raise HardFault per ARMv6-M spec
                     ExceptionEntry(EXC_HARDFAULT);
-                    if (IsLockedUp) return;
+                    if (IsLockedUp) break;
                     UpdateFetchCache(Registers.PC);
                     fetchPtr  = _fetchPtr;
                     fetchMask = _fetchMask;
@@ -224,6 +232,7 @@ public sealed unsafe class CortexM0Plus
         _currentRegionId = regionId;
         _fetchPtr = fetchPtr;
         _fetchMask = fetchMask;
+        return executed;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

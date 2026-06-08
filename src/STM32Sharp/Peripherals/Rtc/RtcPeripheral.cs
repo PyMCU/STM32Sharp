@@ -88,6 +88,14 @@ public sealed class RtcPeripheral : IMemoryMappedDevice, ITickable
         }
     }
 
+    /// <summary>Cycles until the next calendar second — only while alarm A is armed to interrupt.</summary>
+    public long NextEventInCycles()
+    {
+        if ((_icsr & ICSR_INIT) != 0) return long.MaxValue;       // calendar frozen during init
+        if ((_cr & (CR_ALRAE | CR_ALRAIE)) != (CR_ALRAE | CR_ALRAIE)) return long.MaxValue;
+        return TicksPerSecond - _subSecondAccum;
+    }
+
     private void IncrementOneSecond()
     {
         var s = FromBcd(_tr & 0x7F);

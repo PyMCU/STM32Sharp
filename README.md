@@ -39,7 +39,7 @@ src/
   STM32.TestKit/              arnés de pruebas fluido (STM32TestSimulation + probes UART/GPIO)
   STM32Sharp.Runner/          CLI headless para CI (stm32 <bin> --expect-text ...)
   STM32Sharp.Demo/            demo interactiva (blink + UART echo)
-tests/STM32Sharp.Tests/       370 tests (ISA Thumb-1 + periféricos + integración)
+tests/STM32Sharp.Tests/       376 tests (ISA Thumb-1 + periféricos + integración)
 firmware/                     firmware bare-metal de ejemplo (compilado con arm-none-eabi-gcc)
 ```
 
@@ -69,6 +69,27 @@ sim.RunUntilHalt(uart, "READY");      // nunca cuelga: acotado por presupuesto d
 uart.InjectString("Hola");
 sim.RunUntilHalt(() => uart.Text.EndsWith("Hola"));
 ```
+
+## Co-simulación (scheduler de eventos de reloj)
+
+Como avr8js / rp2040js, el emulador expone una **cola de eventos por ciclo** (`ClockEventQueue`) para
+acoplarlo a un simulador externo con su propio solver. El motor solo avanza el CPU hasta el próximo
+evento antes de tickear los periféricos, así que interrupciones, timeouts y eventos programados por el
+host disparan en el ciclo exacto, sin depender del tamaño del lote. Sin nada temporal pendiente, corre
+todo el presupuesto a máxima velocidad de una vez.
+
+```csharp
+using var m = new STM32Machine(Stm32ChipPreset.G071);
+m.LoadFlash(firmware); m.Reset();
+
+// El solver programa estímulos en ciclos exactos:
+m.Scheduler.Schedule(m.Cpu.Cycles + 48_000, () => m.GpioC.SetInput(13, true)); // pulsa un pin
+m.RunUntilCycle(m.Cpu.Cycles + 100_000);                                        // avanza con precisión de ciclo
+```
+
+`Scheduler.Schedule(atCycle, cb)` / `Cancel`, `Scheduler.NextCycle` (para saber hasta dónde avanzar) y
+`RunUntilCycle(target)` cubren el bucle de co-simulación. Los periféricos temporales (SysTick, TIM, RTC,
+watchdogs) declaran su próximo evento, de modo que sus IRQ ya ocurren en el instante correcto.
 
 ## Runner (CI)
 
@@ -125,8 +146,10 @@ boot completo del HAL, emite el banner por LPUART1 y parpadea PA5 (verificado en
   USART1/2 + LPUART1, TIM2/TIM3 (PWM/captura/comparación), SPI1/SPI2 (con IRQ), I2C1/I2C2 (con IRQ),
   ADC, DMA1 + DMAMUX (mem-to-mem y request-driven/DREQ), RTC (calendario + alarma), IWDG/WWDG.
 - ✅ Firmware **Arduino (STM32duino)** real: boot del HAL completo, Serial por LPUART1 e IRQ, blink PA5.
+- ✅ **Scheduler de eventos por ciclo** (`ClockEventQueue`) para co-simulación cycle-accurate, al estilo
+  avr8js / rp2040js (`Scheduler.Schedule` + `RunUntilCycle`).
 - ✅ TestKit + Runner + Demo.
-- ✅ 370 tests en verde.
+- ✅ 376 tests en verde.
 - ⏳ Pendiente: DMA TX request-driven dirigido por reloj, request generators del DMAMUX,
   periféricos restantes (LPTIM, CRC, RNG) según el firmware objetivo.
 

@@ -41,6 +41,9 @@ public sealed class IwdgPeripheral : IMemoryMappedDevice, ITickable
 
     private void Reload() => _counter = ReloadCycles;
 
+    /// <summary>Cycles until the watchdog times out and resets the system (when running).</summary>
+    public long NextEventInCycles() => _running ? (_counter > 0 ? _counter : 1) : long.MaxValue;
+
     public void Tick(long deltaCycles)
     {
         if (!_running) return;

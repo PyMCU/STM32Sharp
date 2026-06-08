@@ -89,6 +89,18 @@ public sealed class TimerPeripheral : IMemoryMappedDevice, ITickable
         }
     }
 
+    /// <summary>
+    /// Cycles until the counter next advances — but only while something observes it (an interrupt is
+    /// enabled in DIER, or a PWM/output-compare consumer is attached). Otherwise the counter just needs
+    /// to be up to date on the next read, so we let the engine run freely and catch up in bulk.
+    /// </summary>
+    public long NextEventInCycles()
+    {
+        if ((_cr1 & CR1_CEN) == 0) return long.MaxValue;
+        if (_dier == 0 && OnChannelOutput == null) return long.MaxValue;
+        return (long)_psc + 1 - _prescalerAccum;
+    }
+
     // ── Output compare / PWM ───────────────────────────────────────────
 
     private int OcMode(int ch)

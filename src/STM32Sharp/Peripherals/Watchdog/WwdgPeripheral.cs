@@ -34,6 +34,9 @@ public sealed class WwdgPeripheral : IMemoryMappedDevice, ITickable
 
     private long ClockDivider => 4096L * (1L << (int)((_cfr >> 11) & 0x3)); // WDGTB at bits [12:11]
 
+    /// <summary>Cycles until the down-counter next decrements (it may reset the system then).</summary>
+    public long NextEventInCycles() => _active ? ClockDivider - _cycleAccum : long.MaxValue;
+
     public void Tick(long deltaCycles)
     {
         if (!_active) return;

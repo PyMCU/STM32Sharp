@@ -78,6 +78,13 @@ public sealed class PpbPeripheral : IMemoryMappedDevice, ITickable
         }
     }
 
+    /// <summary>Cycles until the next SysTick underflow (the next tick interrupt / COUNTFLAG).</summary>
+    public long NextEventInCycles()
+    {
+        if ((_systCsr & 1) == 0) return long.MaxValue; // disabled
+        return _systCvr > 0 ? _systCvr : 1;
+    }
+
     // ── IMemoryMappedDevice — reads ──────────────────────────────────
 
     public uint ReadWord(uint address)

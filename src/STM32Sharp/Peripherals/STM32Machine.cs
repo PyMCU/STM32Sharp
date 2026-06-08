@@ -1,5 +1,6 @@
 using STM32.Core.Cpu;
 using STM32.Core.Memory;
+using STM32.Core.Time;
 using STM32.Peripherals.Adc;
 using STM32.Peripherals.Dma;
 using STM32.Peripherals.Exti;
@@ -288,18 +289,88 @@ public sealed class STM32Machine : IDisposable
     public void Reset() => Cpu.Reset();
 
     /// <summary>
-    /// Run approximately <paramref name="instructions"/> instructions, then advance all
-    /// time-aware peripherals by the number of cycles actually consumed.
+    /// Cycle-accurate event scheduler (see <see cref="ClockEventQueue"/>). An external simulator can
+    /// schedule its own events (a pin change, a bus transaction, a timeout) at exact cycle counts and
+    /// have them fire mid-run, co-simulating at cycle granularity like avr8js / rp2040js.
+    /// </summary>
+    public ClockEventQueue Scheduler { get; } = new();
+
+    /// <summary>Absolute cycle of the earliest pending event across the scheduler and all tickables.</summary>
+    private long NextEventCycle()
+    {
+        var now = Cpu.Cycles;
+        var next = Scheduler.NextCycle ?? long.MaxValue;
+        foreach (var t in _tickables)
+        {
+            var d = t.NextEventInCycles();
+            if (d == long.MaxValue) continue;
+            var abs = now + (d < 1 ? 1 : d);
+            if (abs < next) next = abs;
+        }
+        return next;
+    }
+
+    /// <summary>
+    /// Run up to <paramref name="instructions"/> instructions. The CPU only ever advances to the next
+    /// scheduled clock event before time-aware peripherals are ticked, so interrupts, timeouts and
+    /// user-scheduled events fire at the exact cycle they are due — independent of the batch size.
+    /// When nothing time-sensitive is pending it runs the whole budget at full speed in one step.
     /// </summary>
     public void Run(int instructions)
     {
-        var before = Cpu.Cycles;
-        Cpu.Run(instructions);
-        var delta = Cpu.Cycles - before;
-        LastElapsedCycles = delta;
+        var start = Cpu.Cycles;
+        var remaining = instructions;
 
-        foreach (var t in _tickables)
-            t.Tick(delta);
+        while (remaining > 0 && !Cpu.IsLockedUp)
+        {
+            Scheduler.RunDue(Cpu.Cycles);
+
+            var nextEvent = NextEventCycle();
+            var before = Cpu.Cycles;
+            var did = Cpu.RunBounded(remaining, nextEvent);
+            remaining -= did;
+
+            var delta = Cpu.Cycles - before;
+            if (delta > 0)
+                foreach (var t in _tickables)
+                    t.Tick(delta);
+
+            // Asleep (WFI/WFE) with nothing scheduled to wake us: stop crediting the remaining budget.
+            if (Cpu.Registers.Waiting && nextEvent == long.MaxValue) break;
+            // No forward progress (e.g. lockup just entered): avoid spinning.
+            if (did == 0 && delta == 0) break;
+        }
+
+        Scheduler.RunDue(Cpu.Cycles);
+        LastElapsedCycles = Cpu.Cycles - start;
+    }
+
+    /// <summary>Run until the cycle counter reaches <paramref name="targetCycle"/> (event-accurate).</summary>
+    public void RunUntilCycle(long targetCycle)
+    {
+        while (Cpu.Cycles < targetCycle && !Cpu.IsLockedUp)
+        {
+            Scheduler.RunDue(Cpu.Cycles);
+
+            var nextStop = Math.Min(targetCycle, NextEventCycle());
+            var before = Cpu.Cycles;
+            // Bound by cycles only; allow a generous instruction ceiling for the span.
+            var did = Cpu.RunBounded(int.MaxValue, nextStop);
+
+            var delta = Cpu.Cycles - before;
+            if (delta > 0)
+                foreach (var t in _tickables)
+                    t.Tick(delta);
+
+            if (Cpu.Registers.Waiting && NextEventCycle() == long.MaxValue)
+            {
+                // Nothing will wake us before the target: jump the clock there.
+                if (Cpu.Cycles < targetCycle) Cpu.Cycles = targetCycle;
+                break;
+            }
+            if (did == 0 && delta == 0) break;
+        }
+        Scheduler.RunDue(Cpu.Cycles);
     }
 
     public void Dispose() => Bus.Dispose();

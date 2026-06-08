@@ -146,8 +146,8 @@ public class DmaRequestTests
     {
         using var m = new STM32Machine();
         m.Bus.WriteWord(C0CR, REQ_USART1_RX);
-        m.Dmamux.ChannelForRequest((int)REQ_USART1_RX).Should().Be(1);
-        m.Dmamux.ChannelForRequest((int)REQ_SPI1_RX).Should().Be(-1);
-        m.Dmamux.ChannelForRequest(0).Should().Be(-1);
+        m.Dmamux!.ChannelForRequest((int)REQ_USART1_RX).Should().Be(1);
+        m.Dmamux!.ChannelForRequest((int)REQ_SPI1_RX).Should().Be(-1);
+        m.Dmamux!.ChannelForRequest(0).Should().Be(-1);
     }
 }
