@@ -20,17 +20,30 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
 
     private const uint CR1_SPE = 1u << 6; // SPI enable
 
+    // CR2 interrupt-enable bits
+    private const uint CR2_RXNEIE = 1u << 6;
+    private const uint CR2_TXEIE  = 1u << 7;
+
     // SR bits
     private const uint SR_RXNE = 1u << 0;
     private const uint SR_TXE  = 1u << 1;
 
     public string Name { get; }
 
+    /// <summary>The NVIC IRQ line for this SPI, or -1 if not wired.</summary>
+    public int Irq { get; }
+
+    /// <summary>Set by the machine to assert/deassert this SPI's NVIC IRQ.</summary>
+    public Action<int, bool>? RaiseIrq;
+
     /// <summary>
     /// Connected slave: receives the transmitted byte, returns the byte shifted back on MISO.
     /// When null, reads return 0xFF.
     /// </summary>
     public Func<byte, byte>? OnTransfer;
+
+    /// <summary>Raised when a received byte is available, signalling a DMA request (RX DREQ).</summary>
+    public Action? OnRxDmaRequest;
 
     private uint _cr1;
     private uint _cr2;
@@ -39,7 +52,20 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
 
     public uint Size => 0x400;
 
-    public SpiPeripheral(string name) => Name = name;
+    public SpiPeripheral(string name, int irq = -1)
+    {
+        Name = name;
+        Irq = irq;
+    }
+
+    private void EvaluateIrq()
+    {
+        if (Irq < 0 || RaiseIrq == null) return;
+        var pending =
+            ((_cr2 & CR2_RXNEIE) != 0 && _rxFull) ||
+            ((_cr2 & CR2_TXEIE) != 0);  // TXE is always asserted
+        RaiseIrq(Irq, pending);
+    }
 
     private uint BuildSr()
     {
@@ -55,30 +81,20 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
             case CR1: return _cr1;
             case CR2: return _cr2;
             case SR: return BuildSr();
-            case DR:
-                _rxFull = false;
-                return _rx;
+            case DR: return TakeRx();
             default: return 0;
         }
     }
 
     public ushort ReadHalfWord(uint address)
     {
-        if ((address & 0xFF) == DR)
-        {
-            _rxFull = false;
-            return _rx;
-        }
+        if ((address & 0xFF) == DR) return TakeRx();
         return (ushort)(ReadWord(address & ~3u) >> (int)((address & 2) << 3));
     }
 
     public byte ReadByte(uint address)
     {
-        if ((address & 0xFF) == DR)
-        {
-            _rxFull = false;
-            return _rx;
-        }
+        if ((address & 0xFF) == DR) return TakeRx();
         return (byte)(ReadWord(address & ~3u) >> (int)((address & 3) << 3));
     }
 
@@ -87,6 +103,15 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
         if ((_cr1 & CR1_SPE) == 0) return; // peripheral disabled
         _rx = OnTransfer?.Invoke(value) ?? 0xFF;
         _rxFull = true;
+        EvaluateIrq();
+        OnRxDmaRequest?.Invoke();
+    }
+
+    private byte TakeRx()
+    {
+        _rxFull = false;
+        EvaluateIrq();
+        return _rx;
     }
 
     public void WriteWord(uint address, uint value)
@@ -94,7 +119,7 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
         switch (address & 0xFF)
         {
             case CR1: _cr1 = value; break;
-            case CR2: _cr2 = value; break;
+            case CR2: _cr2 = value; EvaluateIrq(); break;
             case DR: Transmit((byte)value); break;
         }
     }

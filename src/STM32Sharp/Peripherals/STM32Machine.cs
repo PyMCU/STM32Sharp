@@ -51,6 +51,7 @@ public sealed class STM32Machine : IDisposable
     private const uint I2C2_BASE = 0x40005800;
     private const uint ADC_BASE = 0x40012400;
     private const uint DMA1_BASE = 0x40020000;
+    private const uint DMAMUX_BASE = 0x40020800;
     private const uint RTC_BASE = 0x40002800;
     private const uint WWDG_BASE = 0x40002C00;
     private const uint IWDG_BASE = 0x40003000;
@@ -58,8 +59,19 @@ public sealed class STM32Machine : IDisposable
     // STM32G0 NVIC IRQ numbers (RM0444 §11.3).
     private const int IRQ_TIM2 = 15;
     private const int IRQ_TIM3 = 16;
+    private const int IRQ_I2C1 = 23;
+    private const int IRQ_I2C2 = 24;
+    private const int IRQ_SPI1 = 25;
+    private const int IRQ_SPI2 = 26;
     private const int IRQ_USART1 = 27;
     private const int IRQ_USART2 = 28;
+
+    // STM32G0 DMAMUX request line ids (RM0444 §12.3, mirrors HAL DMA_REQUEST_*).
+    private const int REQ_ADC1 = 5;
+    private const int REQ_SPI1_RX = 16;
+    private const int REQ_SPI2_RX = 18;
+    private const int REQ_USART1_RX = 50;
+    private const int REQ_USART2_RX = 52;
 
     public BusInterconnect Bus { get; }
     public CortexM0Plus Cpu { get; }
@@ -87,6 +99,7 @@ public sealed class STM32Machine : IDisposable
     public I2cPeripheral I2c2 { get; }
     public AdcPeripheral Adc { get; }
     public DmaPeripheral Dma { get; }
+    public DmamuxPeripheral Dmamux { get; }
     public RtcPeripheral Rtc { get; }
     public IwdgPeripheral Iwdg { get; }
     public WwdgPeripheral Wwdg { get; }
@@ -156,14 +169,14 @@ public sealed class STM32Machine : IDisposable
         Bus.RegisterPeripheral(TIM3_BASE, Tim3);
 
         // ── SPI ─────────────────────────────────────────────────────────
-        Spi1 = new SpiPeripheral("SPI1");
-        Spi2 = new SpiPeripheral("SPI2");
+        Spi1 = new SpiPeripheral("SPI1", IRQ_SPI1) { RaiseIrq = Cpu.SetInterrupt };
+        Spi2 = new SpiPeripheral("SPI2", IRQ_SPI2) { RaiseIrq = Cpu.SetInterrupt };
         Bus.RegisterPeripheral(SPI1_BASE, Spi1);
         Bus.RegisterPeripheral(SPI2_BASE, Spi2);
 
         // ── I2C ─────────────────────────────────────────────────────────
-        I2c1 = new I2cPeripheral("I2C1");
-        I2c2 = new I2cPeripheral("I2C2");
+        I2c1 = new I2cPeripheral("I2C1", IRQ_I2C1) { RaiseIrq = Cpu.SetInterrupt };
+        I2c2 = new I2cPeripheral("I2C2", IRQ_I2C2) { RaiseIrq = Cpu.SetInterrupt };
         Bus.RegisterPeripheral(I2C1_BASE, I2c1);
         Bus.RegisterPeripheral(I2C2_BASE, I2c2);
 
@@ -171,9 +184,18 @@ public sealed class STM32Machine : IDisposable
         Adc = new AdcPeripheral();
         Bus.RegisterPeripheral(ADC_BASE, Adc);
 
-        // ── DMA ─────────────────────────────────────────────────────────
-        Dma = new DmaPeripheral(Bus) { RaiseIrq = Cpu.SetInterrupt };
+        // ── DMA + DMAMUX ──────────────────────────────────────────────────
+        Dmamux = new DmamuxPeripheral();
+        Bus.RegisterPeripheral(DMAMUX_BASE, Dmamux);
+        Dma = new DmaPeripheral(Bus) { RaiseIrq = Cpu.SetInterrupt, Dmamux = Dmamux };
         Bus.RegisterPeripheral(DMA1_BASE, Dma);
+
+        // Route peripheral DREQs through the DMAMUX to the DMA engine.
+        Usart1.OnRxDmaRequest = () => Dma.Request(REQ_USART1_RX);
+        Usart2.OnRxDmaRequest = () => Dma.Request(REQ_USART2_RX);
+        Spi1.OnRxDmaRequest = () => Dma.Request(REQ_SPI1_RX);
+        Spi2.OnRxDmaRequest = () => Dma.Request(REQ_SPI2_RX);
+        Adc.OnDmaRequest = () => Dma.Request(REQ_ADC1);
 
         // ── RTC ─────────────────────────────────────────────────────────
         Rtc = new RtcPeripheral { RaiseIrq = Cpu.SetInterrupt };

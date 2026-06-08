@@ -7,10 +7,13 @@ namespace STM32.Peripherals.Dma;
 ///   ISR 0x00, IFCR 0x04, then per channel n (1..7) at 0x08 + (n-1)*0x14:
 ///   CCRn +0x00, CNDTRn +0x04, CPARn +0x08, CMARn +0x0C.
 ///
-/// Modeled as an immediate block transfer: enabling a channel (CCR.EN) runs the whole transfer at
-/// once over the system bus, honouring DIR / MEM2MEM, PINC / MINC and PSIZE / MSIZE, then raises
-/// the transfer-complete flag (and IRQ when TCIE is set). This is a simplification of the real
-/// request-driven engine but covers memory-to-memory and peripheral copies used by typical firmware.
+/// Two transfer styles are modeled:
+///   • <b>Memory-to-memory</b> (CCR.MEM2MEM): enabling the channel runs the whole block at once.
+///   • <b>Request-driven</b> (peripheral channels): enabling the channel <i>arms</i> it; each
+///     peripheral DREQ — delivered through <see cref="Dmamux"/> via <see cref="Request"/> — moves a
+///     single element and decrements CNDTR. When CNDTR reaches zero the transfer-complete flag is
+///     raised (and the IRQ when TCIE is set); circular channels (CCR.CIRC) reload and continue.
+/// Both honour DIR, PINC / MINC and PSIZE / MSIZE.
 /// </summary>
 public sealed class DmaPeripheral : IMemoryMappedDevice
 {
@@ -38,11 +41,20 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
     /// <summary>Set by the machine to assert a channel's grouped NVIC IRQ.</summary>
     public Action<int, bool>? RaiseIrq;
 
+    /// <summary>Request multiplexer used to route peripheral DREQs to channels (set by the machine).</summary>
+    public DmamuxPeripheral? Dmamux;
+
     private uint _isr;
     private readonly uint[] _ccr = new uint[ChannelCount + 1];
     private readonly uint[] _cndtr = new uint[ChannelCount + 1];
     private readonly uint[] _cpar = new uint[ChannelCount + 1];
     private readonly uint[] _cmar = new uint[ChannelCount + 1];
+
+    // Request-driven per-channel running state.
+    private readonly bool[] _armed = new bool[ChannelCount + 1];
+    private readonly uint[] _reload = new uint[ChannelCount + 1]; // CNDTR snapshot for CIRC reload
+    private readonly uint[] _pPtr = new uint[ChannelCount + 1];   // running peripheral address
+    private readonly uint[] _mPtr = new uint[ChannelCount + 1];   // running memory address
 
     public uint Size => 0x400;
 
@@ -129,6 +141,77 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
             RaiseIrq?.Invoke(IrqForChannel(ch), true);
     }
 
+    // ── Request-driven transfers ────────────────────────────────────────
+
+    private void Arm(int ch)
+    {
+        _armed[ch] = true;
+        _reload[ch] = _cndtr[ch];
+        _pPtr[ch] = _cpar[ch];
+        _mPtr[ch] = _cmar[ch];
+    }
+
+    private bool _servicing;
+
+    /// <summary>
+    /// Deliver a peripheral DMA request (DREQ) identified by its DMAMUX request line. Moves one
+    /// element on the channel mapped to that line, if such a channel is armed and enabled.
+    /// Reentrant requests (e.g. an ADC that re-arms EOC while its DR is being read by the engine)
+    /// are ignored: the engine services one element at a time.
+    /// </summary>
+    public void Request(int requestId)
+    {
+        if (_servicing) return;
+        var ch = Dmamux?.ChannelForRequest(requestId) ?? -1;
+        if (ch < 1 || ch > ChannelCount) return;
+        if (!_armed[ch] || (_ccr[ch] & CCR_EN) == 0) return;
+
+        _servicing = true;
+        try { TransferOne(ch); }
+        finally { _servicing = false; }
+    }
+
+    private void TransferOne(int ch)
+    {
+        var ccr = _ccr[ch];
+        var pSize = SizeBytes((ccr >> 8) & 0x3);
+        var mSize = SizeBytes((ccr >> 10) & 0x3);
+        var pInc = (ccr & CCR_PINC) != 0;
+        var mInc = (ccr & CCR_MINC) != 0;
+
+        uint srcAddr, dstAddr;
+        int srcSize, dstSize;
+
+        if ((ccr & CCR_DIR) == 0)
+        {
+            srcAddr = _pPtr[ch]; srcSize = pSize; // peripheral → memory
+            dstAddr = _mPtr[ch]; dstSize = mSize;
+        }
+        else
+        {
+            srcAddr = _mPtr[ch]; srcSize = mSize; // memory → peripheral
+            dstAddr = _pPtr[ch]; dstSize = pSize;
+        }
+
+        WriteSized(dstAddr, ReadSized(srcAddr, srcSize), dstSize);
+        if (pInc) _pPtr[ch] += (uint)pSize;
+        if (mInc) _mPtr[ch] += (uint)mSize;
+
+        if (--_cndtr[ch] == 0)
+        {
+            _isr |= GifBit(ch) | TcifBit(ch);
+            if ((ccr & CCR_CIRC) != 0)
+                Arm(ch); // reload CNDTR and pointers, stay armed
+            else
+            {
+                _ccr[ch] &= ~CCR_EN;
+                _armed[ch] = false;
+            }
+            if ((ccr & CCR_TCIE) != 0)
+                RaiseIrq?.Invoke(IrqForChannel(ch), true);
+        }
+    }
+
     public uint ReadWord(uint address)
     {
         var off = address & 0x3FF;
@@ -171,7 +254,16 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
             case 0x00:
                 _ccr[ch] = value;
                 if ((value & CCR_EN) != 0)
-                    RunTransfer(ch);
+                {
+                    if ((value & CCR_MEM2MEM) != 0)
+                        RunTransfer(ch);       // memory-to-memory runs immediately
+                    else
+                        Arm(ch);               // peripheral channel waits for DREQs
+                }
+                else
+                {
+                    _armed[ch] = false;        // disabling cancels an armed channel
+                }
                 break;
             case 0x04: _cndtr[ch] = value & 0xFFFF; break;
             case 0x08: _cpar[ch] = value; break;

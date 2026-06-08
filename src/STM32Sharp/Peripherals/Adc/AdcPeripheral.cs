@@ -36,6 +36,9 @@ public sealed class AdcPeripheral : IMemoryMappedDevice
 
     private const int ChannelCount = 19; // ch0..18 (incl. temp sensor, vref, vbat)
 
+    /// <summary>Raised when a conversion completes (EOC), signalling a DMA request (DREQ).</summary>
+    public Action? OnDmaRequest;
+
     private readonly ushort[] _channels = new ushort[ChannelCount];
 
     private uint _isr;
@@ -91,6 +94,7 @@ public sealed class AdcPeripheral : IMemoryMappedDevice
         _dr = _channels[_sequence[_seqIndex]];
         _isr |= ISR_EOC;
         if (_seqIndex == _sequence.Length - 1) _isr |= ISR_EOS;
+        OnDmaRequest?.Invoke();
     }
 
     private ushort ReadDr()

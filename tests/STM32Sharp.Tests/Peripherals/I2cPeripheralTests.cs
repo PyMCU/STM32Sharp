@@ -6,6 +6,7 @@ namespace STM32Sharp.Tests.Peripherals;
 public class I2cPeripheralTests
 {
     private const uint I2C1 = 0x40005400;
+    private const uint CR1 = I2C1 + 0x00;
     private const uint CR2 = I2C1 + 0x04;
     private const uint ISR = I2C1 + 0x18;
     private const uint ICR = I2C1 + 0x1C;
@@ -20,6 +21,12 @@ public class I2cPeripheralTests
     private const uint RXNE = 1u << 2;
     private const uint NACKF = 1u << 4;
     private const uint STOPF = 1u << 5;
+
+    private const uint TXIE = 1u << 1;
+    private const uint NACKIE = 1u << 4;
+    private const uint STOPIE = 1u << 5;
+
+    private const uint IRQ_I2C1 = 1u << 23;
 
     /// <summary>A trivial slave that echoes a fixed sequence on read and records writes.</summary>
     private sealed class FakeSlave(int address) : II2cSlave
@@ -83,5 +90,45 @@ public class I2cPeripheralTests
         m.Bus.WriteWord(CR2, Cr2(0x55, 1, read: false)); // sets NACKF
         m.Bus.WriteWord(ICR, NACKF);
         (m.Bus.ReadWord(ISR) & NACKF).Should().Be(0u);
+    }
+
+    [Fact]
+    public void Txie_raises_irq_when_txis_set()
+    {
+        using var m = new STM32Machine();
+        var slave = new FakeSlave(0x42);
+        m.I2c1.AddSlave(slave);
+
+        m.Bus.WriteWord(CR1, TXIE);
+        m.Bus.WriteWord(CR2, Cr2(0x42, 2, read: false)); // sets TXIS
+        (m.Cpu.Registers.PendingInterrupts & IRQ_I2C1).Should().NotBe(0);
+
+        m.Bus.WriteWord(TXDR, 0xAA); // TXIS for next byte still pending
+        (m.Cpu.Registers.PendingInterrupts & IRQ_I2C1).Should().NotBe(0);
+    }
+
+    [Fact]
+    public void Nackie_raises_irq_on_absent_slave()
+    {
+        using var m = new STM32Machine();
+        m.Bus.WriteWord(CR1, NACKIE);
+        m.Bus.WriteWord(CR2, Cr2(0x55, 1, read: false)); // NACKF
+        (m.Cpu.Registers.PendingInterrupts & IRQ_I2C1).Should().NotBe(0);
+
+        m.Bus.WriteWord(ICR, NACKF); // clearing the flag deasserts the line
+        (m.Cpu.Registers.PendingInterrupts & IRQ_I2C1).Should().Be(0u);
+    }
+
+    [Fact]
+    public void Stopie_raises_irq_after_autoend()
+    {
+        using var m = new STM32Machine();
+        var slave = new FakeSlave(0x42);
+        m.I2c1.AddSlave(slave);
+
+        m.Bus.WriteWord(CR1, STOPIE);
+        m.Bus.WriteWord(CR2, Cr2(0x42, 1, read: false));
+        m.Bus.WriteWord(TXDR, 0xAA); // completes → AUTOEND sets STOPF
+        (m.Cpu.Registers.PendingInterrupts & IRQ_I2C1).Should().NotBe(0);
     }
 }
