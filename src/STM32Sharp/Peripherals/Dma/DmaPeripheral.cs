@@ -176,6 +176,18 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
         finally { _servicing = false; }
     }
 
+    /// <summary>
+    /// True when the channel mapped to <paramref name="requestId"/> is currently armed and enabled,
+    /// i.e. it can still service DREQs. The machine uses this to pace clock-driven TX requests and to
+    /// stop pumping once a transfer drains (CNDTR reaches zero on a non-circular channel).
+    /// </summary>
+    public bool IsRequestActive(int requestId)
+    {
+        var ch = RequestRouter?.ChannelForRequest(requestId) ?? -1;
+        if (ch < 1 || ch > ChannelCount) return false;
+        return _armed[ch] && (_ccr[ch] & CCR_EN) != 0;
+    }
+
     private void TransferOne(int ch)
     {
         var ccr = _ccr[ch];

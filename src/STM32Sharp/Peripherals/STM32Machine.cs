@@ -2,7 +2,9 @@ using STM32.Core.Cpu;
 using STM32.Core.Memory;
 using STM32.Core.Time;
 using STM32.Peripherals.Adc;
+using STM32.Peripherals.Crc;
 using STM32.Peripherals.Dma;
+using STM32.Peripherals.Lptim;
 using STM32.Peripherals.Exti;
 using STM32.Peripherals.Flash;
 using STM32.Peripherals.Gpio;
@@ -59,6 +61,9 @@ public sealed class STM32Machine : IDisposable
     private const uint RTC_BASE = 0x40002800;
     private const uint WWDG_BASE = 0x40002C00;
     private const uint IWDG_BASE = 0x40003000;
+    private const uint LPTIM1_BASE = 0x40007C00;
+    private const uint LPTIM2_BASE = 0x40009400; // G0 only
+    private const uint CRC_BASE = 0x40023000;
 
     // STM32G0 NVIC IRQ numbers (RM0444 §11.3).
     private const int IRQ_TIM2 = 15;
@@ -70,13 +75,20 @@ public sealed class STM32Machine : IDisposable
     private const int IRQ_USART1 = 27;
     private const int IRQ_USART2 = 28;
     private const int IRQ_LPUART1 = 29; // shared USART3_4_LPUART1 vector on STM32G0
+    private const int IRQ_LPTIM1_G0 = 17; // shared TIM6_DAC_LPTIM1 vector on STM32G0
+    private const int IRQ_LPTIM2_G0 = 18; // shared TIM7_LPTIM2 vector on STM32G0
+    private const int IRQ_LPTIM1_L0 = 13; // dedicated LPTIM1 vector on STM32L0
 
     // STM32G0 DMAMUX request line ids (RM0444 §12.3, mirrors HAL DMA_REQUEST_*).
     private const int REQ_ADC1 = 5;
     private const int REQ_SPI1_RX = 16;
+    private const int REQ_SPI1_TX = 17;
     private const int REQ_SPI2_RX = 18;
+    private const int REQ_SPI2_TX = 19;
     private const int REQ_USART1_RX = 50;
+    private const int REQ_USART1_TX = 51;
     private const int REQ_USART2_RX = 52;
+    private const int REQ_USART2_TX = 53;
 
     public BusInterconnect Bus { get; }
     public CortexM0Plus Cpu { get; }
@@ -119,6 +131,12 @@ public sealed class STM32Machine : IDisposable
     public RtcPeripheral Rtc { get; }
     public IwdgPeripheral Iwdg { get; }
     public WwdgPeripheral Wwdg { get; }
+    /// <summary>CRC calculation unit (present on all supported families).</summary>
+    public CrcPeripheral Crc { get; }
+    /// <summary>LPTIM1 low-power timer (STM32G0 and L0; null on C0, which has no LPTIM).</summary>
+    public LptimPeripheral? Lptim1 { get; }
+    /// <summary>LPTIM2 low-power timer (STM32G0 only).</summary>
+    public LptimPeripheral? Lptim2 { get; }
 
     /// <summary>Number of watchdog-triggered system resets since construction.</summary>
     public int WatchdogResetCount { get; private set; }
@@ -231,18 +249,26 @@ public sealed class STM32Machine : IDisposable
         }
         else
         {
-            Dmamux = new DmamuxPeripheral();
+            Dmamux = new DmamuxPeripheral { DeliverRequest = id => Dma.Request(id) };
             Bus.RegisterPeripheral(DMAMUX_BASE, Dmamux);
             Dma.RequestRouter = Dmamux;
         }
         Bus.RegisterPeripheral(DMA1_BASE, Dma);
 
-        // Route peripheral DREQs through the DMAMUX to the DMA engine.
+        // Route peripheral RX DREQs through the request router to the DMA engine.
         Usart1.OnRxDmaRequest = () => Dma.Request(REQ_USART1_RX);
         Usart2.OnRxDmaRequest = () => Dma.Request(REQ_USART2_RX);
         Spi1.OnRxDmaRequest = () => Dma.Request(REQ_SPI1_RX);
         Spi2.OnRxDmaRequest = () => Dma.Request(REQ_SPI2_RX);
         Adc.OnDmaRequest = () => Dma.Request(REQ_ADC1);
+
+        // Transmit DMA is clock-paced: when a peripheral enables TX DMA, pump one element per frame
+        // period through the scheduler (see StartTxDma) so memory-to-peripheral transfers advance over
+        // cycles instead of draining the whole buffer in a single instantaneous burst.
+        Usart1.OnTxDmaEnableChanged = on => ToggleTxDma(on, REQ_USART1_TX, Usart1.TxFrameCycles);
+        Usart2.OnTxDmaEnableChanged = on => ToggleTxDma(on, REQ_USART2_TX, Usart2.TxFrameCycles);
+        Spi1.OnTxDmaEnableChanged = on => ToggleTxDma(on, REQ_SPI1_TX, Spi1.TxFrameCycles);
+        Spi2.OnTxDmaEnableChanged = on => ToggleTxDma(on, REQ_SPI2_TX, Spi2.TxFrameCycles);
 
         // ── RTC ─────────────────────────────────────────────────────────
         Rtc = new RtcPeripheral { RaiseIrq = Cpu.SetInterrupt };
@@ -254,7 +280,31 @@ public sealed class STM32Machine : IDisposable
         Bus.RegisterPeripheral(IWDG_BASE, Iwdg);
         Bus.RegisterPeripheral(WWDG_BASE, Wwdg);
 
-        _tickables = [Ppb, Tim2, Tim3, Rtc, Iwdg, Wwdg];
+        // ── CRC (all families) and LPTIM (G0/L0) ─────────────────────────
+        Crc = new CrcPeripheral();
+        Bus.RegisterPeripheral(CRC_BASE, Crc);
+
+        if (chip.Family != StFamily.C0) // the STM32C0 has no LPTIM
+        {
+            var lptim1Irq = chip.Family == StFamily.L0 ? IRQ_LPTIM1_L0 : IRQ_LPTIM1_G0;
+            Lptim1 = new LptimPeripheral("LPTIM1", lptim1Irq) { RaiseIrq = Cpu.SetInterrupt };
+            Bus.RegisterPeripheral(LPTIM1_BASE, Lptim1);
+        }
+        if (chip.Family == StFamily.G0) // LPTIM2 exists only on the STM32G0
+        {
+            Lptim2 = new LptimPeripheral("LPTIM2", IRQ_LPTIM2_G0) { RaiseIrq = Cpu.SetInterrupt };
+            Bus.RegisterPeripheral(LPTIM2_BASE, Lptim2);
+        }
+
+        _tickables = BuildTickables();
+    }
+
+    private ITickable[] BuildTickables()
+    {
+        var list = new List<ITickable> { Ppb, Tim2, Tim3, Rtc, Iwdg, Wwdg };
+        if (Lptim1 != null) list.Add(Lptim1);
+        if (Lptim2 != null) list.Add(Lptim2);
+        return [.. list];
     }
 
     private static uint RoundUpPow2(uint v)
@@ -294,6 +344,50 @@ public sealed class STM32Machine : IDisposable
     /// have them fire mid-run, co-simulating at cycle granularity like avr8js / rp2040js.
     /// </summary>
     public ClockEventQueue Scheduler { get; } = new();
+
+    // ── Clock-paced transmit DMA ─────────────────────────────────────────
+    // A TX request line is "active" while its peripheral keeps TX DMA enabled. We pump one element per
+    // frame period through the scheduler, mapping the request to its DMA channel via the same router as
+    // RX. _txActivated remembers whether the mapped channel has armed yet, so we keep waiting if DMA is
+    // set up after the peripheral enable, and stop once the transfer drains.
+    private readonly HashSet<int> _txActive = new();
+    private readonly HashSet<int> _txActivated = new();
+
+    private void ToggleTxDma(bool on, int reqId, int framePeriod)
+    {
+        if (on)
+        {
+            if (!_txActive.Add(reqId)) return;
+            _txActivated.Remove(reqId);
+            PumpTxDma(reqId, framePeriod < 1 ? 1 : framePeriod);
+        }
+        else
+        {
+            _txActive.Remove(reqId);
+            _txActivated.Remove(reqId);
+        }
+    }
+
+    private void PumpTxDma(int reqId, int framePeriod)
+    {
+        Scheduler.Schedule(Cpu.Cycles + framePeriod, () =>
+        {
+            if (!_txActive.Contains(reqId)) return; // peripheral disabled TX DMA
+            if (Dma.IsRequestActive(reqId))
+            {
+                _txActivated.Add(reqId);
+                Dma.Request(reqId); // move one element memory → peripheral data register
+            }
+            // Stop once a channel that had armed has now drained (CNDTR hit zero, EN cleared).
+            if (_txActivated.Contains(reqId) && !Dma.IsRequestActive(reqId))
+            {
+                _txActive.Remove(reqId);
+                _txActivated.Remove(reqId);
+                return;
+            }
+            PumpTxDma(reqId, framePeriod);
+        });
+    }
 
     /// <summary>Absolute cycle of the earliest pending event across the scheduler and all tickables.</summary>
     private long NextEventCycle()

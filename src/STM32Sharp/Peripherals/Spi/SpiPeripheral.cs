@@ -20,9 +20,11 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
 
     private const uint CR1_SPE = 1u << 6; // SPI enable
 
-    // CR2 interrupt-enable bits
-    private const uint CR2_RXNEIE = 1u << 6;
-    private const uint CR2_TXEIE  = 1u << 7;
+    // CR2 bits
+    private const uint CR2_RXDMAEN = 1u << 0;
+    private const uint CR2_TXDMAEN = 1u << 1;
+    private const uint CR2_RXNEIE  = 1u << 6;
+    private const uint CR2_TXEIE   = 1u << 7;
 
     // SR bits
     private const uint SR_RXNE = 1u << 0;
@@ -45,17 +47,35 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
     /// <summary>Raised when a received byte is available, signalling a DMA request (RX DREQ).</summary>
     public Action? OnRxDmaRequest;
 
+    /// <summary>
+    /// Raised when transmit-side DMA becomes active/inactive (CR2.TXDMAEN with the SPI enabled). The
+    /// machine starts/stops a clock-paced TX request pump in response.
+    /// </summary>
+    public Action<bool>? OnTxDmaEnableChanged;
+
     private uint _cr1;
     private uint _cr2;
     private byte _rx;
     private bool _rxFull;
+    private bool _txDmaActive;
 
     public uint Size => 0x400;
+
+    /// <summary>Approximate cycles per transmitted frame (from the CR1 baud-rate prescaler), for TX DMA pacing.</summary>
+    public int TxFrameCycles => 8 << (int)((_cr1 >> 3) & 0x7);
 
     public SpiPeripheral(string name, int irq = -1)
     {
         Name = name;
         Irq = irq;
+    }
+
+    private void EvaluateTxDma()
+    {
+        var active = (_cr2 & CR2_TXDMAEN) != 0 && (_cr1 & CR1_SPE) != 0;
+        if (active == _txDmaActive) return;
+        _txDmaActive = active;
+        OnTxDmaEnableChanged?.Invoke(active);
     }
 
     private void EvaluateIrq()
@@ -118,8 +138,8 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
     {
         switch (address & 0xFF)
         {
-            case CR1: _cr1 = value; break;
-            case CR2: _cr2 = value; EvaluateIrq(); break;
+            case CR1: _cr1 = value; EvaluateTxDma(); break;
+            case CR2: _cr2 = value; EvaluateIrq(); EvaluateTxDma(); break;
             case DR: Transmit((byte)value); break;
         }
     }

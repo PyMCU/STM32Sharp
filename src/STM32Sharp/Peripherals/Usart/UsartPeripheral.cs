@@ -15,6 +15,8 @@ namespace STM32.Peripherals.Usart;
 public sealed class UsartPeripheral : IMemoryMappedDevice
 {
     private const uint CR1 = 0x00;
+    private const uint CR3 = 0x08;
+    private const uint BRR = 0x0C;
     private const uint ISR = 0x1C;
     private const uint ICR = 0x20;
     private const uint RDR = 0x24;
@@ -27,6 +29,10 @@ public sealed class UsartPeripheral : IMemoryMappedDevice
     private const uint RXNEIE = 1u << 5;
     private const uint TCIE = 1u << 6;
     private const uint TXEIE = 1u << 7;
+
+    // CR3 bits
+    private const uint DMAR = 1u << 6; // DMA enable receiver
+    private const uint DMAT = 1u << 7; // DMA enable transmitter
 
     // ISR bits
     private const uint ISR_RXNE  = 1u << 5;
@@ -47,11 +53,27 @@ public sealed class UsartPeripheral : IMemoryMappedDevice
     /// <summary>Raised when a received byte is available, signalling a DMA request (RX DREQ).</summary>
     public Action? OnRxDmaRequest;
 
+    /// <summary>
+    /// Raised when transmit-side DMA becomes active/inactive (CR3.DMAT together with UE and TE). The
+    /// machine starts/stops a clock-paced TX request pump in response, so memory-to-peripheral DMA is
+    /// driven by the cycle scheduler rather than draining the buffer in one instantaneous burst.
+    /// </summary>
+    public Action<bool>? OnTxDmaEnableChanged;
+
     /// <summary>Set by the machine to assert/deassert this USART's NVIC IRQ.</summary>
     public Action<int, bool>? RaiseIrq;
 
     private uint _cr1;
+    private uint _cr3;
+    private uint _brr;
+    private bool _txDmaActive;
     private readonly Queue<byte> _rxFifo = new();
+
+    /// <summary>
+    /// Approximate cycles between transmitted frames, used to pace TX DMA. Modelled as the BRR divisor
+    /// (clocks per bit at OVER8=0); a frame is one element here. Floored so pacing always progresses.
+    /// </summary>
+    public int TxFrameCycles => (int)Math.Max(16, _brr & 0xFFFF);
 
     public uint Size => 0x400;
 
@@ -81,6 +103,15 @@ public sealed class UsartPeripheral : IMemoryMappedDevice
         return isr;
     }
 
+    private void EvaluateTxDma()
+    {
+        // The peripheral asserts a TX DREQ while transmit DMA is enabled and the transmitter is on.
+        var active = (_cr3 & DMAT) != 0 && (_cr1 & UE) != 0 && (_cr1 & TE) != 0;
+        if (active == _txDmaActive) return;
+        _txDmaActive = active;
+        OnTxDmaEnableChanged?.Invoke(active);
+    }
+
     private void EvaluateIrq()
     {
         if (Irq < 0 || RaiseIrq == null || (_cr1 & UE) == 0) return;
@@ -98,6 +129,8 @@ public sealed class UsartPeripheral : IMemoryMappedDevice
         switch (address & 0xFF)
         {
             case CR1: return _cr1;
+            case CR3: return _cr3;
+            case BRR: return _brr;
             case ISR: return BuildIsr();
             case RDR:
                 if (_rxFifo.Count > 0)
@@ -124,6 +157,16 @@ public sealed class UsartPeripheral : IMemoryMappedDevice
             case CR1:
                 _cr1 = value;
                 EvaluateIrq();
+                EvaluateTxDma();
+                break;
+
+            case CR3:
+                _cr3 = value;
+                EvaluateTxDma();
+                break;
+
+            case BRR:
+                _brr = value;
                 break;
 
             case TDR:

@@ -27,6 +27,7 @@ TestResults/
 firmware/**/*.elf
 firmware/**/*.o
 firmware/.cmsis/
+firmware/.wokwi/
 
 # --- OS Generated Files ---
 .DS_Store
