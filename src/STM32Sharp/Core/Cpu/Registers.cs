@@ -82,7 +82,7 @@ public struct Registers
         if (V)
             apsr |= 0x10000000;
 
-        // xPSR combina APSR, EPSR (Thumb bit siempre 1) e IPSR
+        // xPSR combines APSR, EPSR (Thumb bit always 1) and IPSR
         return apsr | 0x01000000 | (IPSR & 0x3F);
     }
 
@@ -100,10 +100,10 @@ public struct Registers
         IPSR = value & 0x3F;
     }
 
-    // Interrupt Status Register (IPSR) y Execution (EPSR) se pueden manejar aparte o implícitamente.
+    // Interrupt Status Register (IPSR) and Execution (EPSR) can be handled separately or implicitly.
 
     /// <summary>
-    /// Helper para obtener el valor indexado (sugar syntax para el Span)
+    /// Helper to get the indexed value (syntactic sugar over the register Span).
     /// </summary>
     public ref uint this[int index]
     {

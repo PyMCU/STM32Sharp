@@ -2,7 +2,7 @@ namespace STM32.Core.Memory;
 
 public interface IMemoryBus
 {
-    // Usamos uint para direcciones (32-bit address space)
+    // Addresses are uint (32-bit address space)
 
     // Read Operations
     byte ReadByte(uint address);

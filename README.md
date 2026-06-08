@@ -1,63 +1,63 @@
 # STM32Sharp
 
-Emulador de microcontroladores **STM32 (núcleo ARM Cortex-M0+)** en C#, parte de la familia de
-emuladores "Sharp". Apunta a las series **STM32C0 / F0 / G0 / L0** (target de referencia:
-**STM32G071**, Nucleo-G071RB). AOT-compatible, sin reflexión ni generación dinámica de código.
+An emulator for **STM32 microcontrollers (ARM Cortex-M0+ core)** written in C#, part of the "Sharp"
+family of emulators. It targets the **STM32C0 / F0 / G0 / L0** series (reference target:
+**STM32G071**, Nucleo-G071RB). AOT-compatible, with no reflection or dynamic code generation.
 
-Comparte el núcleo Cortex-M0+ (ISA Thumb-1 de ARMv6-M) con
-[RP2040Sharp](https://github.com/PyMCU/RP2040Sharp): el CPU, el decodificador de instrucciones, el
-banco de registros y el NVIC/SysTick son comunes; lo específico de STM32 es el mapa de memoria y los
-periféricos.
+It shares the Cortex-M0+ core (ARMv6-M Thumb-1 ISA) with
+[RP2040Sharp](https://github.com/PyMCU/RP2040Sharp): the CPU, the instruction decoder, the register
+bank and the NVIC/SysTick are common; what is STM32-specific is the memory map and the peripherals.
 
 ## Chips (presets)
 
-`Stm32ChipPreset` fija memoria/reloj por pieza; el mapa de periféricos es el de la familia STM32G0,
-que la línea STM32C0 comparte verbatim (verificado contra los headers CMSIS oficiales). Se usa con
-`new STM32Machine(Stm32ChipPreset.C031)` o `STM32TestSimulation.Create(Stm32ChipPreset.C031)`.
+`Stm32ChipPreset` fixes memory/clock per part; the peripheral map is the STM32G0 one, which the
+STM32C0 line shares verbatim (verified against the official CMSIS headers). Use it with
+`new STM32Machine(Stm32ChipPreset.C031)` or `STM32TestSimulation.Create(Stm32ChipPreset.C031)`.
 
-| Preset | Núcleo | Flash / SRAM | Fidelidad | Notas |
-|--------|--------|--------------|-----------|-------|
-| `G071` | Cortex-M0+ | 128 KB / 36 KB | ✅ completa | Target de referencia |
-| `G031` | Cortex-M0+ | 64 KB / 8 KB | ✅ completa | Mismo mapa que G071 |
-| `C031` | Cortex-M0+ | 32 KB / 12 KB | ✅ completa | **Nucleo-C031C6 (Wokwi)**; mapa idéntico al G0 |
-| `L031` | Cortex-M0+ | 32 KB / 8 KB | ✅ completa | **Nucleo-L031K6 (Wokwi)**; RCC/Flash propios del L0 + DMA CSELR |
-| `F103C8` | Cortex-M3 | 64 KB / 20 KB | ❌ no emulable | **BluePill (Wokwi)**; requiere núcleo Thumb-2 |
+| Preset | Core | Flash / SRAM | Fidelity | Notes |
+|--------|------|--------------|----------|-------|
+| `G071` | Cortex-M0+ | 128 KB / 36 KB | ✅ full | Reference target |
+| `G031` | Cortex-M0+ | 64 KB / 8 KB | ✅ full | Same map as G071 |
+| `C031` | Cortex-M0+ | 32 KB / 12 KB | ✅ full | **Nucleo-C031C6 (Wokwi)**; map identical to G0 |
+| `L031` | Cortex-M0+ | 32 KB / 8 KB | ✅ full | **Nucleo-L031K6 (Wokwi)**; L0-specific RCC/Flash + DMA CSELR |
+| `F103C8` | Cortex-M3 | 64 KB / 20 KB | ❌ not emulable | **BluePill (Wokwi)**; requires a Thumb-2 core |
 
-> C031 y L031 están validados end-to-end con `feature_check` recompilado contra los headers oficiales
-> `stm32c031xx.h` / `stm32l031xx.h` (ver más abajo). En L0 el RCC (boot MSI/HSI/PLL), el Flash (unlock
-> PECR) y el enrutado DMA por CSELR son específicos de la familia. El F103 es Cortex-M3 (fuera del M0+).
+> C031 and L031 are validated end-to-end with `feature_check` recompiled against the official
+> `stm32c031xx.h` / `stm32l031xx.h` headers (see below). On L0 the RCC (MSI/HSI/PLL boot), the Flash
+> (PECR unlock) and the CSELR-based DMA routing are family-specific. The F103 is a Cortex-M3 (outside
+> the M0+ scope).
 
-## Arquitectura
+## Architecture
 
 ```
 src/
-  STM32Sharp/                 librería del emulador
-    Core/Cpu/                 CortexM0Plus, InstructionDecoder (LUT O(1)), Registers, Instructions/
+  STM32Sharp/                 emulator library
+    Core/Cpu/                 CortexM0Plus, InstructionDecoder (O(1) LUT), Registers, Instructions/
     Core/Memory/              BusInterconnect, PeripheralBus, Ram, interfaces
     Peripherals/              STM32Machine + Ppb (NVIC/SysTick/SCB), Rcc, Flash, SysCfg, Exti,
                               Gpio, Usart, Timer, Spi, I2c, Adc, Dma, Dmamux, Rtc, Iwdg, Wwdg
-  STM32.TestKit/              arnés de pruebas fluido (STM32TestSimulation + probes UART/GPIO)
-  STM32Sharp.Runner/          CLI headless para CI (stm32 <bin> --expect-text ...)
-  STM32Sharp.Demo/            demo interactiva (blink + UART echo)
-tests/STM32Sharp.Tests/       376 tests (ISA Thumb-1 + periféricos + integración)
-firmware/                     firmware bare-metal de ejemplo (compilado con arm-none-eabi-gcc)
+  STM32.TestKit/              fluent test harness (STM32TestSimulation + UART/GPIO probes)
+  STM32Sharp.Runner/          headless CLI for CI (stm32 <bin> --expect-text ...)
+  STM32Sharp.Demo/            interactive demo (blink + UART echo)
+tests/STM32Sharp.Tests/       376 tests (Thumb-1 ISA + peripherals + integration)
+firmware/                     bare-metal sample firmware (built with arm-none-eabi-gcc)
 ```
 
-### Mapa de memoria (STM32G0)
+### Memory map (STM32G0)
 
-| Región | Dirección | Contenido |
-|--------|-----------|-----------|
-| `0x0` | `0x0000_0000` | Boot alias → espejo de Flash (BOOT0 = 0) |
-| `0x0` | `0x0800_0000` | Flash (fast-path por puntero) |
-| `0x2` | `0x2000_0000` | SRAM (fast-path por puntero) |
-| `0x4` | `0x4000_0000` | Periféricos APB/AHB (RCC, FLASH, SYSCFG, EXTI, TIM, USART, SPI, I2C, ADC, DMA…) |
+| Region | Address | Contents |
+|--------|---------|----------|
+| `0x0` | `0x0000_0000` | Boot alias → Flash mirror (BOOT0 = 0) |
+| `0x0` | `0x0800_0000` | Flash (pointer fast-path) |
+| `0x2` | `0x2000_0000` | SRAM (pointer fast-path) |
+| `0x4` | `0x4000_0000` | APB/AHB peripherals (RCC, FLASH, SYSCFG, EXTI, TIM, USART, SPI, I2C, ADC, DMA…) |
 | `0x5` | `0x5000_0000` | GPIO (IOPORT) |
 | `0xE` | `0xE000_0000` | PPB: NVIC, SysTick, SCB |
 
-Flash y SRAM se sirven por aritmética de punteros; el resto se enruta por dirección absoluta en
-`PeripheralBus`.
+Flash and SRAM are served through pointer arithmetic; everything else is routed by absolute address
+in `PeripheralBus`.
 
-## Uso (TestKit)
+## Usage (TestKit)
 
 ```csharp
 using var sim = STM32TestSimulation.Create()
@@ -65,94 +65,94 @@ using var sim = STM32TestSimulation.Create()
     .AddUart(2, out var uart)
     .AddGpio("A", out var gpio);
 
-sim.RunUntilHalt(uart, "READY");      // nunca cuelga: acotado por presupuesto de instrucciones
-uart.InjectString("Hola");
-sim.RunUntilHalt(() => uart.Text.EndsWith("Hola"));
+sim.RunUntilHalt(uart, "READY");      // never hangs: bounded by an instruction budget
+uart.InjectString("Hello");
+sim.RunUntilHalt(() => uart.Text.EndsWith("Hello"));
 ```
 
-## Co-simulación (scheduler de eventos de reloj)
+## Co-simulation (clock-event scheduler)
 
-Como avr8js / rp2040js, el emulador expone una **cola de eventos por ciclo** (`ClockEventQueue`) para
-acoplarlo a un simulador externo con su propio solver. El motor solo avanza el CPU hasta el próximo
-evento antes de tickear los periféricos, así que interrupciones, timeouts y eventos programados por el
-host disparan en el ciclo exacto, sin depender del tamaño del lote. Sin nada temporal pendiente, corre
-todo el presupuesto a máxima velocidad de una vez.
+Like avr8js / rp2040js, the emulator exposes a **per-cycle event queue** (`ClockEventQueue`) so it can
+be coupled to an external simulator with its own solver. The engine only advances the CPU up to the
+next event before ticking the peripherals, so interrupts, timeouts and host-scheduled events fire at
+the exact cycle, independent of the batch size. With nothing time-related pending, it runs the whole
+budget at full speed in one go.
 
 ```csharp
 using var m = new STM32Machine(Stm32ChipPreset.G071);
 m.LoadFlash(firmware); m.Reset();
 
-// El solver programa estímulos en ciclos exactos:
-m.Scheduler.Schedule(m.Cpu.Cycles + 48_000, () => m.GpioC.SetInput(13, true)); // pulsa un pin
-m.RunUntilCycle(m.Cpu.Cycles + 100_000);                                        // avanza con precisión de ciclo
+// The solver schedules stimuli at exact cycles:
+m.Scheduler.Schedule(m.Cpu.Cycles + 48_000, () => m.GpioC.SetInput(13, true)); // pulse a pin
+m.RunUntilCycle(m.Cpu.Cycles + 100_000);                                        // advance cycle-accurately
 ```
 
-`Scheduler.Schedule(atCycle, cb)` / `Cancel`, `Scheduler.NextCycle` (para saber hasta dónde avanzar) y
-`RunUntilCycle(target)` cubren el bucle de co-simulación. Los periféricos temporales (SysTick, TIM, RTC,
-watchdogs) declaran su próximo evento, de modo que sus IRQ ya ocurren en el instante correcto.
+`Scheduler.Schedule(atCycle, cb)` / `Cancel`, `Scheduler.NextCycle` (to know how far to advance) and
+`RunUntilCycle(target)` cover the co-simulation loop. The time-based peripherals (SysTick, TIM, RTC,
+watchdogs) declare their next event, so their IRQs already fire at the right instant.
 
 ## Runner (CI)
 
 ```bash
 dotnet run --project src/STM32Sharp.Runner -- firmware.bin --expect-text "PASS" --uart 2
-# exit 0 = texto encontrado · 1 = no encontrado · 2 = CPU en lockup
+# exit 0 = text found · 1 = not found · 2 = CPU in lockup
 ```
 
-## Firmware de ejemplo
+## Sample firmware
 
-Requiere el [Arm GNU Toolchain](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads)
+Requires the [Arm GNU Toolchain](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads)
 (`arm-none-eabi-gcc`):
 
 ```bash
-./firmware/build.sh    # compila boot_clock, blink, uart_echo y feature_check (G071 + C031);
-                       # clona los headers CMSIS oficiales y copia los .bin a los tests
+./firmware/build.sh    # builds boot_clock, blink, uart_echo and feature_check (G071 + C031);
+                       # clones the official CMSIS headers and copies the .bin files to the tests
 ```
 
-- **boot_clock** — replica la secuencia del HAL: enciende PLL, espera `PLLRDY`, conmuta el reloj,
-  configura SysTick con interrupción.
-- **blink** — alterna PA5 (LED de la Nucleo-G071RB) vía GPIOA BSRR.
-- **uart_echo** — emite un saludo y hace eco de los bytes recibidos por USART2.
-- **feature_check** — compilado contra los **headers CMSIS oficiales de STMicroelectronics**
-  (`stm32g071xx.h`) y ARM CMSIS-Core, clonados de GitHub por `build.sh`. No usa ninguna dirección
-  escrita a mano: accede a TIM/SPI/I2C/RTC/DMA/DMAMUX vía las estructuras y máscaras de bits
-  autoritativas de ST. Un resultado en verde (0xFF en `0x2000_0000`) demuestra que el mapa de
-  memoria, los offsets de registros y la semántica de bits del emulador coinciden con el silicio.
-- **feature_check_c031** — el mismo firmware recompilado contra `stm32c031xx.h` (header oficial del
-  STM32C0) y un linker script de 32 KB/12 KB. Corre sobre el preset `C031` y pasa los 8 subtests,
-  probando que una pieza soportada por Wokwi funciona end-to-end.
-- **feature_check_l0** — firmware del **STM32L031** contra `stm32l031xx.h`, que ejercita el RCC del L0
-  (boot HSI→PLL), el Flash del L0 (unlock PECR de dos etapas) y el enrutado DMA por CSELR, además de
-  TIM2/SPI1/I2C1/RTC. Corre sobre el preset `L031` y pasa los 8 subtests.
+- **boot_clock** — replicates the HAL sequence: enables the PLL, waits for `PLLRDY`, switches the
+  clock, configures SysTick with an interrupt.
+- **blink** — toggles PA5 (the Nucleo-G071RB LED) via GPIOA BSRR.
+- **uart_echo** — emits a greeting and echoes bytes received over USART2.
+- **feature_check** — built against the **official STMicroelectronics CMSIS headers**
+  (`stm32g071xx.h`) and ARM CMSIS-Core, cloned from GitHub by `build.sh`. It uses no hand-written
+  addresses: it accesses TIM/SPI/I2C/RTC/DMA/DMAMUX through ST's authoritative structs and bit masks.
+  A green result (`0xFF` at `0x2000_0000`) proves that the emulator's memory map, register offsets and
+  bit semantics match the silicon.
+- **feature_check_c031** — the same firmware recompiled against `stm32c031xx.h` (the official STM32C0
+  header) and a 32 KB/12 KB linker script. It runs on the `C031` preset and passes the 8 subtests,
+  proving a Wokwi-supported part works end-to-end.
+- **feature_check_l0** — **STM32L031** firmware against `stm32l031xx.h`, which exercises the L0 RCC
+  (HSI→PLL boot), the L0 Flash (two-stage PECR unlock) and the CSELR-based DMA routing, plus
+  TIM2/SPI1/I2C1/RTC. It runs on the `L031` preset and passes the 8 subtests.
 
-### Firmware Arduino (STM32duino)
+### Arduino firmware (STM32duino)
 
-`arduino_blink` es un sketch real compilado con el **core Arduino oficial de STMicroelectronics**
-(STM32duino), que se apoya en el HAL de ST — el binario arranca por `SystemClock_Config()`, HAL GPIO
-y HAL UART por interrupción, igual que el firmware que un usuario subiría a la placa. En la
-Nucleo-G071RB, `Serial` es **LPUART1** (PA2/PA3) y `LED_BUILTIN` es **PA5**. El emulador ejecuta el
-boot completo del HAL, emite el banner por LPUART1 y parpadea PA5 (verificado en `ArduinoTests`).
+`arduino_blink` is a real sketch built with the **official STMicroelectronics Arduino core**
+(STM32duino), which sits on top of ST's HAL — the binary boots through `SystemClock_Config()`, HAL
+GPIO and interrupt-driven HAL UART, just like firmware a user would flash onto the board. On the
+Nucleo-G071RB, `Serial` is **LPUART1** (PA2/PA3) and `LED_BUILTIN` is **PA5**. The emulator runs the
+full HAL boot, emits the banner over LPUART1 and blinks PA5 (verified in `ArduinoTests`).
 
 ```bash
-./firmware/build_arduino.sh   # requiere arduino-cli + el core STMicroelectronics:stm32
+./firmware/build_arduino.sh   # requires arduino-cli + the STMicroelectronics:stm32 core
 ```
 
-## Estado
+## Status
 
-- ✅ Núcleo Cortex-M0+ (Thumb-1 completo, NVIC, SysTick, excepciones) — ISA validado con 267 tests.
-- ✅ Boot de firmware real compilado con GCC (RCC/PLL, Flash, GPIO, USART).
-- ✅ Periféricos avanzados validados con firmware compilado contra los **headers CMSIS oficiales de
-  ST** (`feature_check`): TIM, SPI/I2C con IRQ, RTC, DMA mem-to-mem y request-driven vía DMAMUX.
-- ✅ Periféricos: NVIC/SysTick/SCB, RCC, FLASH (unlock/erase/program), PWR, SYSCFG, EXTI, GPIO,
-  USART1/2 + LPUART1, TIM2/TIM3 (PWM/captura/comparación), SPI1/SPI2 (con IRQ), I2C1/I2C2 (con IRQ),
-  ADC, DMA1 + DMAMUX (mem-to-mem y request-driven/DREQ), RTC (calendario + alarma), IWDG/WWDG.
-- ✅ Firmware **Arduino (STM32duino)** real: boot del HAL completo, Serial por LPUART1 e IRQ, blink PA5.
-- ✅ **Scheduler de eventos por ciclo** (`ClockEventQueue`) para co-simulación cycle-accurate, al estilo
-  avr8js / rp2040js (`Scheduler.Schedule` + `RunUntilCycle`).
+- ✅ Cortex-M0+ core (complete Thumb-1, NVIC, SysTick, exceptions) — ISA validated with 267 tests.
+- ✅ Boot of real GCC-built firmware (RCC/PLL, Flash, GPIO, USART).
+- ✅ Advanced peripherals validated with firmware built against the **official ST CMSIS headers**
+  (`feature_check`): TIM, SPI/I2C with IRQ, RTC, DMA memory-to-memory and request-driven via DMAMUX.
+- ✅ Peripherals: NVIC/SysTick/SCB, RCC, FLASH (unlock/erase/program), PWR, SYSCFG, EXTI, GPIO,
+  USART1/2 + LPUART1, TIM2/TIM3 (PWM/capture/compare), SPI1/SPI2 (with IRQ), I2C1/I2C2 (with IRQ),
+  ADC, DMA1 + DMAMUX (memory-to-memory and request-driven/DREQ), RTC (calendar + alarm), IWDG/WWDG.
+- ✅ Real **Arduino (STM32duino)** firmware: full HAL boot, Serial over LPUART1 with IRQ, PA5 blink.
+- ✅ **Per-cycle event scheduler** (`ClockEventQueue`) for cycle-accurate co-simulation, in the style
+  of avr8js / rp2040js (`Scheduler.Schedule` + `RunUntilCycle`).
 - ✅ TestKit + Runner + Demo.
-- ✅ 376 tests en verde.
-- ⏳ Pendiente: DMA TX request-driven dirigido por reloj, request generators del DMAMUX,
-  periféricos restantes (LPTIM, CRC, RNG) según el firmware objetivo.
+- ✅ 376 tests passing.
+- ⏳ Pending: clock-driven request-driven DMA TX, DMAMUX request generators, remaining peripherals
+  (LPTIM, CRC, RNG) as the target firmware requires.
 
-## Licencia
+## License
 
 MIT.
