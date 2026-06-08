@@ -56,16 +56,17 @@ public sealed class RccL0Peripheral : IMemoryMappedDevice
         switch (offset)
         {
             case RCC_CR:
-                // Mirror each *ON request into its *RDY flag immediately.
-                if ((value & HSION) != 0) value |= HSIRDY;
-                if ((value & MSION) != 0) value |= MSIRDY;
-                if ((value & HSEON) != 0) value |= HSERDY;
-                if ((value & PLLON) != 0) value |= PLLRDY;
+                // Each *RDY flag tracks its *ON bit (set on enable, cleared on disable) so the HAL's
+                // "turn oscillator off and wait until *RDY clears" loops complete (see RccPeripheral).
+                value = (value & HSION) != 0 ? value | HSIRDY : value & ~HSIRDY;
+                value = (value & MSION) != 0 ? value | MSIRDY : value & ~MSIRDY;
+                value = (value & HSEON) != 0 ? value | HSERDY : value & ~HSERDY;
+                value = (value & PLLON) != 0 ? value | PLLRDY : value & ~PLLRDY;
                 _regs[RCC_CR >> 2] = value;
                 break;
 
             case RCC_CRRCR:
-                if ((value & HSI48ON) != 0) value |= HSI48RDY;
+                value = (value & HSI48ON) != 0 ? value | HSI48RDY : value & ~HSI48RDY;
                 _regs[RCC_CRRCR >> 2] = value;
                 break;
 

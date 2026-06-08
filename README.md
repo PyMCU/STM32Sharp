@@ -39,7 +39,7 @@ src/
   STM32.TestKit/              arnés de pruebas fluido (STM32TestSimulation + probes UART/GPIO)
   STM32Sharp.Runner/          CLI headless para CI (stm32 <bin> --expect-text ...)
   STM32Sharp.Demo/            demo interactiva (blink + UART echo)
-tests/STM32Sharp.Tests/       368 tests (ISA Thumb-1 + periféricos + integración)
+tests/STM32Sharp.Tests/       370 tests (ISA Thumb-1 + periféricos + integración)
 firmware/                     firmware bare-metal de ejemplo (compilado con arm-none-eabi-gcc)
 ```
 
@@ -103,19 +103,32 @@ Requiere el [Arm GNU Toolchain](https://developer.arm.com/downloads/-/arm-gnu-to
   (boot HSI→PLL), el Flash del L0 (unlock PECR de dos etapas) y el enrutado DMA por CSELR, además de
   TIM2/SPI1/I2C1/RTC. Corre sobre el preset `L031` y pasa los 8 subtests.
 
+### Firmware Arduino (STM32duino)
+
+`arduino_blink` es un sketch real compilado con el **core Arduino oficial de STMicroelectronics**
+(STM32duino), que se apoya en el HAL de ST — el binario arranca por `SystemClock_Config()`, HAL GPIO
+y HAL UART por interrupción, igual que el firmware que un usuario subiría a la placa. En la
+Nucleo-G071RB, `Serial` es **LPUART1** (PA2/PA3) y `LED_BUILTIN` es **PA5**. El emulador ejecuta el
+boot completo del HAL, emite el banner por LPUART1 y parpadea PA5 (verificado en `ArduinoTests`).
+
+```bash
+./firmware/build_arduino.sh   # requiere arduino-cli + el core STMicroelectronics:stm32
+```
+
 ## Estado
 
 - ✅ Núcleo Cortex-M0+ (Thumb-1 completo, NVIC, SysTick, excepciones) — ISA validado con 267 tests.
 - ✅ Boot de firmware real compilado con GCC (RCC/PLL, Flash, GPIO, USART).
 - ✅ Periféricos avanzados validados con firmware compilado contra los **headers CMSIS oficiales de
   ST** (`feature_check`): TIM, SPI/I2C con IRQ, RTC, DMA mem-to-mem y request-driven vía DMAMUX.
-- ✅ Periféricos: NVIC/SysTick/SCB, RCC, FLASH (unlock/erase/program), SYSCFG, EXTI, GPIO, USART,
-  TIM2/TIM3 (PWM/captura/comparación), SPI1/SPI2 (con IRQ), I2C1/I2C2 (con IRQ), ADC,
-  DMA1 + DMAMUX (mem-to-mem y request-driven/DREQ), RTC (calendario + alarma), IWDG/WWDG.
+- ✅ Periféricos: NVIC/SysTick/SCB, RCC, FLASH (unlock/erase/program), PWR, SYSCFG, EXTI, GPIO,
+  USART1/2 + LPUART1, TIM2/TIM3 (PWM/captura/comparación), SPI1/SPI2 (con IRQ), I2C1/I2C2 (con IRQ),
+  ADC, DMA1 + DMAMUX (mem-to-mem y request-driven/DREQ), RTC (calendario + alarma), IWDG/WWDG.
+- ✅ Firmware **Arduino (STM32duino)** real: boot del HAL completo, Serial por LPUART1 e IRQ, blink PA5.
 - ✅ TestKit + Runner + Demo.
-- ✅ 368 tests en verde.
+- ✅ 370 tests en verde.
 - ⏳ Pendiente: DMA TX request-driven dirigido por reloj, request generators del DMAMUX,
-  periféricos restantes (LPUART, LPTIM, CRC, RNG) según el firmware objetivo.
+  periféricos restantes (LPTIM, CRC, RNG) según el firmware objetivo.
 
 ## Licencia
 

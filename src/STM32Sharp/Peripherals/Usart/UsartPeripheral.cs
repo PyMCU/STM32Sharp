@@ -29,9 +29,11 @@ public sealed class UsartPeripheral : IMemoryMappedDevice
     private const uint TXEIE = 1u << 7;
 
     // ISR bits
-    private const uint ISR_RXNE = 1u << 5;
-    private const uint ISR_TC   = 1u << 6;
-    private const uint ISR_TXE  = 1u << 7;
+    private const uint ISR_RXNE  = 1u << 5;
+    private const uint ISR_TC    = 1u << 6;
+    private const uint ISR_TXE   = 1u << 7;
+    private const uint ISR_TEACK = 1u << 21; // transmit enable acknowledge
+    private const uint ISR_REACK = 1u << 22; // receive enable acknowledge
 
     /// <summary>USART name for diagnostics, e.g. "USART2".</summary>
     public string Name { get; }
@@ -72,6 +74,10 @@ public sealed class UsartPeripheral : IMemoryMappedDevice
         // TXE and TC are always set (instant transmit); RXNE set when data is queued.
         uint isr = ISR_TXE | ISR_TC;
         if (_rxFifo.Count > 0) isr |= ISR_RXNE;
+        // The HAL waits for the enable-acknowledge flags after turning TE/RE on (UART_CheckIdleState);
+        // report them ready immediately so HAL/Arduino UART init completes.
+        if ((_cr1 & TE) != 0) isr |= ISR_TEACK;
+        if ((_cr1 & RE) != 0) isr |= ISR_REACK;
         return isr;
     }
 

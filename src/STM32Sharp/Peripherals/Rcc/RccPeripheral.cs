@@ -17,6 +17,8 @@ public sealed class RccPeripheral : IMemoryMappedDevice
     // Register offsets (STM32G0 reference manual RM0444 §5.4)
     private const uint RCC_CR   = 0x00; // Clock control
     private const uint RCC_CFGR = 0x08; // Clock configuration
+    private const uint RCC_BDCR = 0x5C; // Backup domain control (LSE)
+    private const uint RCC_CSR  = 0x60; // Control/status (LSI)
 
     // RCC_CR bits
     private const uint HSION  = 1u << 8;
@@ -25,6 +27,12 @@ public sealed class RccPeripheral : IMemoryMappedDevice
     private const uint HSERDY = 1u << 17;
     private const uint PLLON  = 1u << 24;
     private const uint PLLRDY = 1u << 25;
+
+    // BDCR/CSR low-speed oscillator bits (LSEON→LSERDY in BDCR, LSION→LSIRDY in CSR)
+    private const uint LSEON  = 1u << 0;
+    private const uint LSERDY = 1u << 1;
+    private const uint LSION  = 1u << 0;
+    private const uint LSIRDY = 1u << 1;
 
     private readonly uint[] _regs = new uint[0x100 / 4];
 
@@ -50,10 +58,13 @@ public sealed class RccPeripheral : IMemoryMappedDevice
         switch (offset)
         {
             case RCC_CR:
-                // Mirror each *ON request into its *RDY flag immediately.
-                if ((value & HSION) != 0) value |= HSIRDY;
-                if ((value & HSEON) != 0) value |= HSERDY;
-                if ((value & PLLON) != 0) value |= PLLRDY;
+                // Each *RDY flag tracks its *ON bit: set when the oscillator is enabled, cleared when
+                // turned off. The HAL not only waits for ready after enabling, it also disables an
+                // oscillator (e.g. the PLL) and spins until its *RDY clears before reconfiguring — so
+                // the flag must drop too, otherwise that second wait loop never completes.
+                value = (value & HSION) != 0 ? value | HSIRDY : value & ~HSIRDY;
+                value = (value & HSEON) != 0 ? value | HSERDY : value & ~HSERDY;
+                value = (value & PLLON) != 0 ? value | PLLRDY : value & ~PLLRDY;
                 _regs[RCC_CR >> 2] = value;
                 break;
 
@@ -63,6 +74,16 @@ public sealed class RccPeripheral : IMemoryMappedDevice
                 var sw = value & 0x7u;
                 value = (value & ~0x38u) | (sw << 3);
                 _regs[RCC_CFGR >> 2] = value;
+                break;
+
+            case RCC_BDCR:
+                value = (value & LSEON) != 0 ? value | LSERDY : value & ~LSERDY;
+                _regs[RCC_BDCR >> 2] = value;
+                break;
+
+            case RCC_CSR:
+                value = (value & LSION) != 0 ? value | LSIRDY : value & ~LSIRDY;
+                _regs[RCC_CSR >> 2] = value;
                 break;
 
             default:

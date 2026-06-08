@@ -7,6 +7,7 @@ using STM32.Peripherals.Flash;
 using STM32.Peripherals.Gpio;
 using STM32.Peripherals.I2c;
 using STM32.Peripherals.Ppb;
+using STM32.Peripherals.Pwr;
 using STM32.Peripherals.Rcc;
 using STM32.Peripherals.Rtc;
 using STM32.Peripherals.Spi;
@@ -43,6 +44,7 @@ public sealed class STM32Machine : IDisposable
     private const uint GPIO_BASE  = 0x50000000; // GPIOA; ports are 0x400 apart
     private const uint USART1_BASE = 0x40013800;
     private const uint USART2_BASE = 0x40004400;
+    private const uint LPUART1_BASE = 0x40008000;
     private const uint TIM2_BASE = 0x40000000;
     private const uint TIM3_BASE = 0x40000400;
     private const uint SPI1_BASE = 0x40013000;
@@ -52,6 +54,7 @@ public sealed class STM32Machine : IDisposable
     private const uint ADC_BASE = 0x40012400;
     private const uint DMA1_BASE = 0x40020000;
     private const uint DMAMUX_BASE = 0x40020800;
+    private const uint PWR_BASE = 0x40007000;
     private const uint RTC_BASE = 0x40002800;
     private const uint WWDG_BASE = 0x40002C00;
     private const uint IWDG_BASE = 0x40003000;
@@ -65,6 +68,7 @@ public sealed class STM32Machine : IDisposable
     private const int IRQ_SPI2 = 26;
     private const int IRQ_USART1 = 27;
     private const int IRQ_USART2 = 28;
+    private const int IRQ_LPUART1 = 29; // shared USART3_4_LPUART1 vector on STM32G0
 
     // STM32G0 DMAMUX request line ids (RM0444 §12.3, mirrors HAL DMA_REQUEST_*).
     private const int REQ_ADC1 = 5;
@@ -87,6 +91,7 @@ public sealed class STM32Machine : IDisposable
     public IMemoryMappedDevice Flash { get; }
     public ExtiPeripheral Exti { get; }
     public SysCfgPeripheral SysCfg { get; }
+    public PwrPeripheral Pwr { get; }
 
     // ── I/O peripherals ─────────────────────────────────────────────────
     /// <summary>GPIO ports indexed by name: "A","B","C","D","F".</summary>
@@ -96,6 +101,8 @@ public sealed class STM32Machine : IDisposable
     public GpioPortPeripheral GpioC { get; }
     public UsartPeripheral Usart1 { get; }
     public UsartPeripheral Usart2 { get; }
+    /// <summary>LPUART1 — the default Serial port of STM32duino Nucleo-G0 boards (PA2/PA3).</summary>
+    public UsartPeripheral Lpuart1 { get; }
     public TimerPeripheral Tim2 { get; }
     public TimerPeripheral Tim3 { get; }
     public SpiPeripheral Spi1 { get; }
@@ -163,6 +170,9 @@ public sealed class STM32Machine : IDisposable
         SysCfg = new SysCfgPeripheral();
         Bus.RegisterPeripheral(SYSCFG_BASE, SysCfg);
 
+        Pwr = new PwrPeripheral();
+        Bus.RegisterPeripheral(PWR_BASE, Pwr);
+
         // ── GPIO ports (STM32G0 has A,B,C,D,F) ──────────────────────────
         var ports = new Dictionary<string, GpioPortPeripheral>();
         var portNames = new[] { ("A", 0u), ("B", 1u), ("C", 2u), ("D", 3u), ("F", 5u) };
@@ -185,6 +195,8 @@ public sealed class STM32Machine : IDisposable
         Usart2 = new UsartPeripheral("USART2", IRQ_USART2) { RaiseIrq = Cpu.SetInterrupt };
         Bus.RegisterPeripheral(USART1_BASE, Usart1);
         Bus.RegisterPeripheral(USART2_BASE, Usart2);
+        Lpuart1 = new UsartPeripheral("LPUART1", IRQ_LPUART1) { RaiseIrq = Cpu.SetInterrupt };
+        Bus.RegisterPeripheral(LPUART1_BASE, Lpuart1);
 
         // ── Timers ──────────────────────────────────────────────────────
         Tim2 = new TimerPeripheral("TIM2", IRQ_TIM2) { RaiseIrq = Cpu.SetInterrupt };

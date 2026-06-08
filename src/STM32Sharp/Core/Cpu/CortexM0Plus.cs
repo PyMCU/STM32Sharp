@@ -338,7 +338,9 @@ public sealed unsafe class CortexM0Plus
 
     public void SetInterrupt(int irq, bool pending)
     {
-        if (irq is < 0 or > 25) return;
+        // ARMv6-M supports up to 32 external interrupts (0..31). STM32G0 uses lines up to 31
+        // (e.g. USART1=27, USART2=28, LPUART1=29); the old 0..25 cap was an RP2040 leftover.
+        if (irq is < 0 or > 31) return;
         var bit = 1u << irq;
         if (pending)
             Registers.PendingInterrupts |= bit;
@@ -411,6 +413,10 @@ public sealed unsafe class CortexM0Plus
 
         // Hardware IRQs
         var pending = Registers.PendingInterrupts & Registers.EnabledInterrupts;
+        // Don't re-enter the interrupt that is currently running: an active exception is not re-taken
+        // until its return (ARMv6-M §B1.5). Level-sensitive lines (e.g. a USART that re-asserts while
+        // its handler writes TDR) would otherwise recurse on the first byte instead of advancing.
+        if (Registers.IPSR >= 16) pending &= ~(1u << (int)(Registers.IPSR - 16));
         if (pending != 0 && Registers.PRIMASK == 0)
         {
             var irq = System.Numerics.BitOperations.TrailingZeroCount(pending);

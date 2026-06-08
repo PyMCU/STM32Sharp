@@ -31,3 +31,4 @@ firmware/.cmsis/
 # --- OS Generated Files ---
 .DS_Store
 Thumbs.db
+firmware/arduino_blink/build/
