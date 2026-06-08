@@ -81,8 +81,10 @@ public sealed class STM32Machine : IDisposable
 
     // ── System peripherals ──────────────────────────────────────────────
     public PpbPeripheral Ppb { get; }
-    public RccPeripheral Rcc { get; }
-    public FlashPeripheral Flash { get; }
+    /// <summary>RCC device (RccPeripheral on G0/C0, RccL0Peripheral on L0).</summary>
+    public IMemoryMappedDevice Rcc { get; }
+    /// <summary>FLASH device (FlashPeripheral on G0/C0, FlashL0Peripheral on L0).</summary>
+    public IMemoryMappedDevice Flash { get; }
     public ExtiPeripheral Exti { get; }
     public SysCfgPeripheral SysCfg { get; }
 
@@ -102,7 +104,10 @@ public sealed class STM32Machine : IDisposable
     public I2cPeripheral I2c2 { get; }
     public AdcPeripheral Adc { get; }
     public DmaPeripheral Dma { get; }
-    public DmamuxPeripheral Dmamux { get; }
+    /// <summary>DMAMUX request router (G0/C0 only; null on L0, which routes via DMA CSELR).</summary>
+    public DmamuxPeripheral? Dmamux { get; }
+    /// <summary>DMA CSELR request router (L0 only; null on G0/C0).</summary>
+    public DmaCselrRouter? DmaCselr { get; }
     public RtcPeripheral Rtc { get; }
     public IwdgPeripheral Iwdg { get; }
     public WwdgPeripheral Wwdg { get; }
@@ -145,10 +150,11 @@ public sealed class STM32Machine : IDisposable
         Ppb = new PpbPeripheral(Cpu);
         Bus.RegisterPeripheral(PPB_BASE, Ppb);
 
-        Rcc = new RccPeripheral();
+        // RCC and Flash controllers differ on the L0 (clock tree and PECR-based programming).
+        Rcc = chip.Family == StFamily.L0 ? new RccL0Peripheral() : new RccPeripheral();
         Bus.RegisterPeripheral(RCC_BASE, Rcc);
 
-        Flash = new FlashPeripheral(Bus);
+        Flash = chip.Family == StFamily.L0 ? new FlashL0Peripheral(Bus) : new FlashPeripheral(Bus);
         Bus.RegisterPeripheral(FLASH_BASE, Flash);
 
         Exti = new ExtiPeripheral { RaiseIrq = Cpu.SetInterrupt };
@@ -202,10 +208,20 @@ public sealed class STM32Machine : IDisposable
         Adc = new AdcPeripheral();
         Bus.RegisterPeripheral(ADC_BASE, Adc);
 
-        // ── DMA + DMAMUX ──────────────────────────────────────────────────
-        Dmamux = new DmamuxPeripheral();
-        Bus.RegisterPeripheral(DMAMUX_BASE, Dmamux);
-        Dma = new DmaPeripheral(Bus) { RaiseIrq = Cpu.SetInterrupt, Dmamux = Dmamux };
+        // ── DMA + request routing (DMAMUX on G0/C0, CSELR on L0) ──────────
+        Dma = new DmaPeripheral(Bus) { RaiseIrq = Cpu.SetInterrupt };
+        if (chip.Family == StFamily.L0)
+        {
+            DmaCselr = new DmaCselrRouter();
+            Dma.Cselr = DmaCselr;
+            Dma.RequestRouter = DmaCselr; // CSELR lives inside the DMA block at offset 0xA8
+        }
+        else
+        {
+            Dmamux = new DmamuxPeripheral();
+            Bus.RegisterPeripheral(DMAMUX_BASE, Dmamux);
+            Dma.RequestRouter = Dmamux;
+        }
         Bus.RegisterPeripheral(DMA1_BASE, Dma);
 
         // Route peripheral DREQs through the DMAMUX to the DMA engine.

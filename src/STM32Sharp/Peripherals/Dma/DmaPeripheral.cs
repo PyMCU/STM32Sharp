@@ -41,8 +41,13 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
     /// <summary>Set by the machine to assert a channel's grouped NVIC IRQ.</summary>
     public Action<int, bool>? RaiseIrq;
 
-    /// <summary>Request multiplexer used to route peripheral DREQs to channels (set by the machine).</summary>
-    public DmamuxPeripheral? Dmamux;
+    /// <summary>Router used to map peripheral DREQs to channels (DMAMUX on G0, CSELR on L0).</summary>
+    public IDmaRequestRouter? RequestRouter;
+
+    /// <summary>On STM32L0, the CSELR register lives in the DMA block at offset 0xA8; set to expose it.</summary>
+    public DmaCselrRouter? Cselr;
+
+    private const uint CSELR = 0xA8;
 
     private uint _isr;
     private readonly uint[] _ccr = new uint[ChannelCount + 1];
@@ -162,7 +167,7 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
     public void Request(int requestId)
     {
         if (_servicing) return;
-        var ch = Dmamux?.ChannelForRequest(requestId) ?? -1;
+        var ch = RequestRouter?.ChannelForRequest(requestId) ?? -1;
         if (ch < 1 || ch > ChannelCount) return;
         if (!_armed[ch] || (_ccr[ch] & CCR_EN) == 0) return;
 
@@ -217,6 +222,7 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
         var off = address & 0x3FF;
         if (off == ISR) return _isr;
         if (off == IFCR) return 0;
+        if (off == CSELR && Cselr != null) return Cselr.Value;
 
         var ch = ChannelOf(off);
         if (ch < 0) return 0;
@@ -245,6 +251,7 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
             return;
         }
         if (off == ISR) return;
+        if (off == CSELR && Cselr != null) { Cselr.Value = value; return; }
 
         var ch = ChannelOf(off);
         if (ch < 0) return;

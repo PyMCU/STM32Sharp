@@ -33,6 +33,8 @@ mkdir -p "$CMSIS"
   git clone --depth 1 https://github.com/STMicroelectronics/cmsis_device_g0.git "$CMSIS/cmsis_device_g0"
 [ -d "$CMSIS/cmsis_device_c0" ] || \
   git clone --depth 1 https://github.com/STMicroelectronics/cmsis_device_c0.git "$CMSIS/cmsis_device_c0"
+[ -d "$CMSIS/cmsis_device_l0" ] || \
+  git clone --depth 1 https://github.com/STMicroelectronics/cmsis_device_l0.git "$CMSIS/cmsis_device_l0"
 [ -d "$CMSIS/CMSIS_6" ] || \
   git clone --depth 1 https://github.com/ARM-software/CMSIS_6.git "$CMSIS/CMSIS_6"
 
@@ -52,5 +54,14 @@ arm-none-eabi-gcc $CFLAGS \
   -o "$HERE/feature_check/feature_check_c031.elf"
 arm-none-eabi-objcopy -O binary "$HERE/feature_check/feature_check_c031.elf" "$HERE/feature_check/feature_check_c031.bin"
 cp "$HERE/feature_check/feature_check_c031.bin" "$OUT/feature_check_c031.bin"
+
+# STM32L031 (Wokwi part): exercises the L0-specific RCC/Flash/CSELR via the official ST L0 header.
+echo "Building feature_check_l0 ..."
+arm-none-eabi-gcc $CFLAGS \
+  -I"$CMSIS/cmsis_device_l0/Include" $CORE_INC -DSTM32L031xx \
+  -T "$HERE/stm32l0_min.ld" "$HERE/feature_check_l0/feature_check_l0.c" \
+  -o "$HERE/feature_check_l0/feature_check_l0.elf"
+arm-none-eabi-objcopy -O binary "$HERE/feature_check_l0/feature_check_l0.elf" "$HERE/feature_check_l0/feature_check_l0.bin"
+cp "$HERE/feature_check_l0/feature_check_l0.bin" "$OUT/feature_check_l0.bin"
 
 echo "Done. Binaries in $OUT"

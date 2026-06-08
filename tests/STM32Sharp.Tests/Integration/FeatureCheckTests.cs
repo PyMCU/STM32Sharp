@@ -52,6 +52,18 @@ public class FeatureCheckTests
         m.Bus.ReadWord(Result).Should().Be(0xFFu, "every subtest must pass on the C031 too");
     }
 
+    [Fact]
+    public void L031_firmware_runs_on_the_l031_preset()
+    {
+        // feature_check_l0.bin is compiled against the official ST CMSIS L0 header (stm32l031xx.h)
+        // with a 32K/8K linker script. It exercises the L0-specific RCC (boot HSI→PLL), Flash (PECR
+        // unlock) and DMA CSELR routing. Running it on the L031 preset proves the L0 family works.
+        using var m = new STM32Machine(Stm32ChipPreset.L031);
+        Run(m, "feature_check_l0.bin");
+        m.Cpu.IsLockedUp.Should().BeFalse("the L031 firmware must not fault");
+        m.Bus.ReadWord(Result).Should().Be(0xFFu, "every L0 subtest must pass");
+    }
+
     [Theory]
     [InlineData(0, "TIM3 counts and raises UIF + CC1IF")]
     [InlineData(1, "SPI1 full-duplex receives the idle MISO byte")]

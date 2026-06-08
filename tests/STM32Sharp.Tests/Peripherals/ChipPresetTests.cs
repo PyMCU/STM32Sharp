@@ -48,10 +48,19 @@ public class ChipPresetTests
     }
 
     [Fact]
-    public void L031_preset_reports_partial_fidelity_and_no_dmamux()
+    public void L031_uses_cselr_routing_not_dmamux()
     {
-        Stm32ChipPreset.L031.FullFidelity.Should().BeFalse();
+        // The L0 now has full fidelity via its own RCC/Flash and DMA CSELR (no DMAMUX).
+        Stm32ChipPreset.L031.FullFidelity.Should().BeTrue();
         Stm32ChipPreset.L031.HasDmamux.Should().BeFalse();
-        Stm32ChipPreset.C031.HasDmamux.Should().BeTrue();
+        Stm32ChipPreset.L031.Family.Should().Be(StFamily.L0);
+
+        using var m = new STM32Machine(Stm32ChipPreset.L031);
+        m.Dmamux.Should().BeNull("the L0 routes DMA requests via CSELR");
+        m.DmaCselr.Should().NotBeNull();
+
+        using var g = new STM32Machine(Stm32ChipPreset.C031);
+        g.Dmamux.Should().NotBeNull("the C0 uses a DMAMUX");
+        g.DmaCselr.Should().BeNull();
     }
 }

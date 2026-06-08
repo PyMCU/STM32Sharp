@@ -11,7 +11,7 @@ namespace STM32.Peripherals.Dma;
 /// a given peripheral request line is wired to, which the <see cref="DmaPeripheral"/> uses to deliver
 /// request-driven (DREQ) transfers.
 /// </summary>
-public sealed class DmamuxPeripheral : IMemoryMappedDevice
+public sealed class DmamuxPeripheral : IMemoryMappedDevice, IDmaRequestRouter
 {
     private const int ChannelCount = 7; // DMAMUX channels 0..6 → DMA1 channels 1..7
     private const uint CXCR_END = (uint)ChannelCount * 4; // CxCR registers occupy 0x00..0x1B

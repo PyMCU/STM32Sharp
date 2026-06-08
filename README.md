@@ -20,11 +20,12 @@ que la línea STM32C0 comparte verbatim (verificado contra los headers CMSIS ofi
 | `G071` | Cortex-M0+ | 128 KB / 36 KB | ✅ completa | Target de referencia |
 | `G031` | Cortex-M0+ | 64 KB / 8 KB | ✅ completa | Mismo mapa que G071 |
 | `C031` | Cortex-M0+ | 32 KB / 12 KB | ✅ completa | **Nucleo-C031C6 (Wokwi)**; mapa idéntico al G0 |
-| `L031` | Cortex-M0+ | 32 KB / 8 KB | ⚠️ parcial | **Nucleo-L031K6 (Wokwi)**; I/O sí, RCC/Flash/MSI del L0 y DMAMUX no |
+| `L031` | Cortex-M0+ | 32 KB / 8 KB | ✅ completa | **Nucleo-L031K6 (Wokwi)**; RCC/Flash propios del L0 + DMA CSELR |
 | `F103C8` | Cortex-M3 | 64 KB / 20 KB | ❌ no emulable | **BluePill (Wokwi)**; requiere núcleo Thumb-2 |
 
-> El C031 está validado end-to-end con el firmware `feature_check` recompilado contra el header
-> oficial `stm32c031xx.h` (ver más abajo). El F103 es Cortex-M3 y queda fuera del núcleo M0+ actual.
+> C031 y L031 están validados end-to-end con `feature_check` recompilado contra los headers oficiales
+> `stm32c031xx.h` / `stm32l031xx.h` (ver más abajo). En L0 el RCC (boot MSI/HSI/PLL), el Flash (unlock
+> PECR) y el enrutado DMA por CSELR son específicos de la familia. El F103 es Cortex-M3 (fuera del M0+).
 
 ## Arquitectura
 
@@ -38,7 +39,7 @@ src/
   STM32.TestKit/              arnés de pruebas fluido (STM32TestSimulation + probes UART/GPIO)
   STM32Sharp.Runner/          CLI headless para CI (stm32 <bin> --expect-text ...)
   STM32Sharp.Demo/            demo interactiva (blink + UART echo)
-tests/STM32Sharp.Tests/       367 tests (ISA Thumb-1 + periféricos + integración)
+tests/STM32Sharp.Tests/       368 tests (ISA Thumb-1 + periféricos + integración)
 firmware/                     firmware bare-metal de ejemplo (compilado con arm-none-eabi-gcc)
 ```
 
@@ -98,6 +99,9 @@ Requiere el [Arm GNU Toolchain](https://developer.arm.com/downloads/-/arm-gnu-to
 - **feature_check_c031** — el mismo firmware recompilado contra `stm32c031xx.h` (header oficial del
   STM32C0) y un linker script de 32 KB/12 KB. Corre sobre el preset `C031` y pasa los 8 subtests,
   probando que una pieza soportada por Wokwi funciona end-to-end.
+- **feature_check_l0** — firmware del **STM32L031** contra `stm32l031xx.h`, que ejercita el RCC del L0
+  (boot HSI→PLL), el Flash del L0 (unlock PECR de dos etapas) y el enrutado DMA por CSELR, además de
+  TIM2/SPI1/I2C1/RTC. Corre sobre el preset `L031` y pasa los 8 subtests.
 
 ## Estado
 
@@ -109,7 +113,7 @@ Requiere el [Arm GNU Toolchain](https://developer.arm.com/downloads/-/arm-gnu-to
   TIM2/TIM3 (PWM/captura/comparación), SPI1/SPI2 (con IRQ), I2C1/I2C2 (con IRQ), ADC,
   DMA1 + DMAMUX (mem-to-mem y request-driven/DREQ), RTC (calendario + alarma), IWDG/WWDG.
 - ✅ TestKit + Runner + Demo.
-- ✅ 367 tests en verde.
+- ✅ 368 tests en verde.
 - ⏳ Pendiente: DMA TX request-driven dirigido por reloj, request generators del DMAMUX,
   periféricos restantes (LPUART, LPTIM, CRC, RNG) según el firmware objetivo.
 
