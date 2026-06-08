@@ -38,8 +38,12 @@ public class STM32TestSimulation : IDisposable
     private readonly List<byte> _breakpointHits = [];
 
     protected STM32TestSimulation(uint flashSize, uint sramSize)
+        : this(Stm32ChipPreset.Custom(flashSize, sramSize)) { }
+
+    protected STM32TestSimulation(Stm32ChipPreset chip)
     {
-        Machine = new STM32Machine(flashSize, sramSize);
+        Machine = new STM32Machine(chip);
+        _clkHz = chip.DefaultClockHz;
         // Capture BKPT so firmware asserts/panics are observable without halting the sim.
         Machine.Cpu.OnBreakpoint = imm8 => _breakpointHits.Add(imm8);
     }
@@ -47,6 +51,9 @@ public class STM32TestSimulation : IDisposable
     /// <summary>Create a new simulation (defaults: 128 KB Flash, 64 KB SRAM).</summary>
     public static STM32TestSimulation Create(uint flashSize = 128 * 1024, uint sramSize = 64 * 1024)
         => new(flashSize, sramSize);
+
+    /// <summary>Create a simulation for a specific chip preset (memory sizes + default clock).</summary>
+    public static STM32TestSimulation Create(Stm32ChipPreset chip) => new(chip);
 
     // ── Configuration ────────────────────────────────────────────────
 

@@ -76,6 +76,9 @@ public sealed class STM32Machine : IDisposable
     public BusInterconnect Bus { get; }
     public CortexM0Plus Cpu { get; }
 
+    /// <summary>The chip preset this machine was built from (memory sizes, default clock, core).</summary>
+    public Stm32ChipPreset Chip { get; }
+
     // ── System peripherals ──────────────────────────────────────────────
     public PpbPeripheral Ppb { get; }
     public RccPeripheral Rcc { get; }
@@ -119,8 +122,23 @@ public sealed class STM32Machine : IDisposable
     private ITickable[] _tickables;
 
     public STM32Machine(uint flashSize = 128 * 1024, uint sramSize = 64 * 1024)
+        : this(Stm32ChipPreset.Custom(flashSize, sramSize)) { }
+
+    /// <summary>
+    /// Build a machine for a specific chip preset (see <see cref="Stm32ChipPreset"/>). Throws if the
+    /// preset's core is not emulable (e.g. a Cortex-M3 part such as the STM32F103).
+    /// </summary>
+    public STM32Machine(Stm32ChipPreset chip)
     {
-        Bus = new BusInterconnect(flashSize, sramSize);
+        if (!chip.IsEmulable)
+            throw new NotSupportedException(
+                $"{chip.Name} uses {chip.Core}, which the ARMv6-M (Cortex-M0+) core cannot execute. {chip.Notes}");
+
+        Chip = chip;
+        // The bus addresses memory with power-of-two masks, so round each region up to the next
+        // power of two that fully contains the part's real size (e.g. G071's 36 KB → 64 KB,
+        // C031's 12 KB → 16 KB). The real size is kept on Chip for reporting.
+        Bus = new BusInterconnect(RoundUpPow2(chip.FlashSize), RoundUpPow2(chip.SramSize));
         Cpu = new CortexM0Plus(Bus);
 
         // ── System peripherals ──────────────────────────────────────────
@@ -208,6 +226,14 @@ public sealed class STM32Machine : IDisposable
         Bus.RegisterPeripheral(WWDG_BASE, Wwdg);
 
         _tickables = [Ppb, Tim2, Tim3, Rtc, Iwdg, Wwdg];
+    }
+
+    private static uint RoundUpPow2(uint v)
+    {
+        if (v != 0 && (v & (v - 1)) == 0) return v; // already a power of two
+        uint p = 1;
+        while (p < v) p <<= 1;
+        return p;
     }
 
     private void HandleWatchdogReset()

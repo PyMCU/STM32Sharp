@@ -14,16 +14,15 @@ public class FeatureCheckTests
 {
     private const uint Result = 0x20000000;
 
-    private static byte[] LoadFirmware()
+    private static byte[] LoadFirmware(string name = "feature_check.bin")
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "Firmware", "feature_check.bin");
+        var path = Path.Combine(AppContext.BaseDirectory, "Firmware", name);
         return File.ReadAllBytes(path);
     }
 
-    private static STM32Machine Run()
+    private static STM32Machine Run(STM32Machine m, string firmware)
     {
-        var m = new STM32Machine();
-        m.LoadFlash(LoadFirmware());
+        m.LoadFlash(LoadFirmware(firmware));
         m.Reset();
         // Small batches so time-aware peripherals (TIM3) tick while the firmware spins.
         for (var i = 0; i < 200; i++)
@@ -31,12 +30,26 @@ public class FeatureCheckTests
         return m;
     }
 
+    private static STM32Machine Run() => Run(new STM32Machine(), "feature_check.bin");
+
     [Fact]
     public void All_advanced_peripheral_subtests_pass()
     {
         using var m = Run();
         m.Cpu.IsLockedUp.Should().BeFalse("the firmware must not fault");
         m.Bus.ReadWord(Result).Should().Be(0xFFu, "every subtest bit must be set");
+    }
+
+    [Fact]
+    public void C031_firmware_runs_on_the_c031_preset()
+    {
+        // feature_check_c031.bin is the SAME firmware compiled against the official ST CMSIS C0
+        // header (stm32c031xx.h) and a 32K/12K linker script. Running it on the C031 preset proves
+        // the STM32C0 peripheral map and a Wokwi-supported part work end-to-end.
+        using var m = new STM32Machine(Stm32ChipPreset.C031);
+        Run(m, "feature_check_c031.bin");
+        m.Cpu.IsLockedUp.Should().BeFalse("the C031 firmware must not fault");
+        m.Bus.ReadWord(Result).Should().Be(0xFFu, "every subtest must pass on the C031 too");
     }
 
     [Theory]

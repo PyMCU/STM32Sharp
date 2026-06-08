@@ -18,7 +18,12 @@
  *   bit6 DMA1 memory-to-memory block copy + TCIF
  *   bit7 DMA1 request-driven copy fed by the SPI1_RX DREQ via the DMAMUX
  */
-#include "stm32g071xx.h"
+/* Device header is selectable so the same firmware can target several M0+ parts whose peripheral
+ * map matches the STM32G0 (e.g. STM32C031). Defaults to the reference STM32G071. */
+#ifndef DEVICE_HEADER
+#define DEVICE_HEADER "stm32g071xx.h"
+#endif
+#include DEVICE_HEADER
 
 #define RESULT (*(volatile uint32_t *)0x20000000u)
 #define PHASE  (*(volatile uint32_t *)0x20000004u)
