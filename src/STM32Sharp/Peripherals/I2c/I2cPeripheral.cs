@@ -43,6 +43,13 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
     private const uint RXDR = 0x24;
     private const uint TXDR = 0x28;
 
+    // CR1 interrupt-enable bits
+    private const uint CR1_TXIE   = 1u << 1;
+    private const uint CR1_RXIE   = 1u << 2;
+    private const uint CR1_NACKIE = 1u << 4;
+    private const uint CR1_STOPIE = 1u << 5;
+    private const uint CR1_TCIE   = 1u << 6;
+
     // CR2 fields
     private const uint CR2_RD_WRN = 1u << 10;
     private const uint CR2_START  = 1u << 13;
@@ -60,6 +67,12 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
 
     public string Name { get; }
 
+    /// <summary>The NVIC IRQ line for this I2C, or -1 if not wired.</summary>
+    public int Irq { get; }
+
+    /// <summary>Set by the machine to assert/deassert this I2C's NVIC IRQ.</summary>
+    public Action<int, bool>? RaiseIrq;
+
     private readonly Dictionary<int, II2cSlave> _slaves = new();
 
     private uint _cr1;
@@ -70,7 +83,23 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
 
     public uint Size => 0x400;
 
-    public I2cPeripheral(string name) => Name = name;
+    public I2cPeripheral(string name, int irq = -1)
+    {
+        Name = name;
+        Irq = irq;
+    }
+
+    private void EvaluateIrq()
+    {
+        if (Irq < 0 || RaiseIrq == null) return;
+        var pending =
+            ((_cr1 & CR1_TXIE)   != 0 && (_isr & ISR_TXIS)  != 0) ||
+            ((_cr1 & CR1_RXIE)   != 0 && (_isr & ISR_RXNE)  != 0) ||
+            ((_cr1 & CR1_NACKIE) != 0 && (_isr & ISR_NACKF) != 0) ||
+            ((_cr1 & CR1_STOPIE) != 0 && (_isr & ISR_STOPF) != 0) ||
+            ((_cr1 & CR1_TCIE)   != 0 && (_isr & ISR_TC)    != 0);
+        RaiseIrq(Irq, pending);
+    }
 
     /// <summary>Attach a slave device on this bus.</summary>
     public void AddSlave(II2cSlave slave) => _slaves[slave.Address] = slave;
@@ -100,6 +129,7 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
         _nbytes--;
         if (_nbytes > 0) _isr |= ISR_RXNE;   // next byte ready
         else CompleteTransfer();
+        EvaluateIrq();
         return b;
     }
 
@@ -131,6 +161,7 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
         {
             _isr |= ISR_NACKF;          // no device acknowledged
             _isr &= ~ISR_BUSY;
+            EvaluateIrq();
             return;
         }
 
@@ -146,13 +177,14 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
             if (_nbytes > 0) _isr |= ISR_TXIS | ISR_TXE;
             else CompleteTransfer();
         }
+        EvaluateIrq();
     }
 
     public void WriteWord(uint address, uint value)
     {
         switch (address & 0xFF)
         {
-            case CR1: _cr1 = value; break;
+            case CR1: _cr1 = value; EvaluateIrq(); break;
 
             case CR2:
                 if ((value & CR2_START) != 0) StartTransfer(value);
@@ -161,11 +193,13 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
                     _active?.Stop();
                     _isr |= ISR_STOPF;
                     _isr &= ~ISR_BUSY;
+                    EvaluateIrq();
                 }
                 break;
 
             case ICR:
                 _isr &= ~value; // write-1-to-clear (STOPF, NACKF, ...)
+                EvaluateIrq();
                 break;
 
             case TXDR:
@@ -182,6 +216,7 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
         _nbytes--;
         if (_nbytes > 0) _isr |= ISR_TXIS | ISR_TXE;
         else CompleteTransfer();
+        EvaluateIrq();
     }
 
     public void WriteHalfWord(uint address, ushort value)

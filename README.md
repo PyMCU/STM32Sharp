@@ -17,11 +17,11 @@ src/
     Core/Cpu/                 CortexM0Plus, InstructionDecoder (LUT O(1)), Registers, Instructions/
     Core/Memory/              BusInterconnect, PeripheralBus, Ram, interfaces
     Peripherals/              STM32Machine + Ppb (NVIC/SysTick/SCB), Rcc, Flash, SysCfg, Exti,
-                              Gpio, Usart, Timer, Spi, I2c, Adc, Dma
+                              Gpio, Usart, Timer, Spi, I2c, Adc, Dma, Dmamux, Rtc, Iwdg, Wwdg
   STM32.TestKit/              arnés de pruebas fluido (STM32TestSimulation + probes UART/GPIO)
   STM32Sharp.Runner/          CLI headless para CI (stm32 <bin> --expect-text ...)
   STM32Sharp.Demo/            demo interactiva (blink + UART echo)
-tests/STM32Sharp.Tests/       289 tests (ISA Thumb-1 + periféricos + integración)
+tests/STM32Sharp.Tests/       349 tests (ISA Thumb-1 + periféricos + integración)
 firmware/                     firmware bare-metal de ejemplo (compilado con arm-none-eabi-gcc)
 ```
 
@@ -78,11 +78,12 @@ Requiere el [Arm GNU Toolchain](https://developer.arm.com/downloads/-/arm-gnu-to
 - ✅ Núcleo Cortex-M0+ (Thumb-1 completo, NVIC, SysTick, excepciones) — ISA validado con 267 tests.
 - ✅ Boot de firmware real compilado con GCC (RCC/PLL, Flash, GPIO, USART).
 - ✅ Periféricos: NVIC/SysTick/SCB, RCC, FLASH (unlock/erase/program), SYSCFG, EXTI, GPIO, USART,
-  TIM2/TIM3, SPI1/SPI2, I2C1/I2C2, ADC, DMA1.
+  TIM2/TIM3 (PWM/captura/comparación), SPI1/SPI2 (con IRQ), I2C1/I2C2 (con IRQ), ADC,
+  DMA1 + DMAMUX (mem-to-mem y request-driven/DREQ), RTC (calendario + alarma), IWDG/WWDG.
 - ✅ TestKit + Runner + Demo.
-- ✅ 323 tests en verde.
-- ⏳ Pendiente: timers avanzados (captura/comparación/PWM), I2C/SPI con interrupciones y DMA
-  request-driven, RTC, watchdogs.
+- ✅ 349 tests en verde.
+- ⏳ Pendiente: DMA TX request-driven dirigido por reloj, request generators del DMAMUX,
+  periféricos restantes (LPUART, LPTIM, CRC, RNG) según el firmware objetivo.
 
 ## Licencia
 

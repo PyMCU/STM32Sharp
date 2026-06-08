@@ -42,6 +42,9 @@ public sealed class UsartPeripheral : IMemoryMappedDevice
     /// <summary>Raised with each transmitted byte (TDR write).</summary>
     public Action<byte>? OnByteTransmit;
 
+    /// <summary>Raised when a received byte is available, signalling a DMA request (RX DREQ).</summary>
+    public Action? OnRxDmaRequest;
+
     /// <summary>Set by the machine to assert/deassert this USART's NVIC IRQ.</summary>
     public Action<int, bool>? RaiseIrq;
 
@@ -61,6 +64,7 @@ public sealed class UsartPeripheral : IMemoryMappedDevice
     {
         _rxFifo.Enqueue(value);
         EvaluateIrq();
+        OnRxDmaRequest?.Invoke();
     }
 
     private uint BuildIsr()
