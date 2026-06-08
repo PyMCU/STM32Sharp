@@ -21,7 +21,7 @@ src/
   STM32.TestKit/              arnés de pruebas fluido (STM32TestSimulation + probes UART/GPIO)
   STM32Sharp.Runner/          CLI headless para CI (stm32 <bin> --expect-text ...)
   STM32Sharp.Demo/            demo interactiva (blink + UART echo)
-tests/STM32Sharp.Tests/       349 tests (ISA Thumb-1 + periféricos + integración)
+tests/STM32Sharp.Tests/       358 tests (ISA Thumb-1 + periféricos + integración)
 firmware/                     firmware bare-metal de ejemplo (compilado con arm-none-eabi-gcc)
 ```
 
@@ -72,16 +72,23 @@ Requiere el [Arm GNU Toolchain](https://developer.arm.com/downloads/-/arm-gnu-to
   configura SysTick con interrupción.
 - **blink** — alterna PA5 (LED de la Nucleo-G071RB) vía GPIOA BSRR.
 - **uart_echo** — emite un saludo y hace eco de los bytes recibidos por USART2.
+- **feature_check** — compilado contra los **headers CMSIS oficiales de STMicroelectronics**
+  (`stm32g071xx.h`) y ARM CMSIS-Core, clonados de GitHub por `build.sh`. No usa ninguna dirección
+  escrita a mano: accede a TIM/SPI/I2C/RTC/DMA/DMAMUX vía las estructuras y máscaras de bits
+  autoritativas de ST. Un resultado en verde (0xFF en `0x2000_0000`) demuestra que el mapa de
+  memoria, los offsets de registros y la semántica de bits del emulador coinciden con el silicio.
 
 ## Estado
 
 - ✅ Núcleo Cortex-M0+ (Thumb-1 completo, NVIC, SysTick, excepciones) — ISA validado con 267 tests.
 - ✅ Boot de firmware real compilado con GCC (RCC/PLL, Flash, GPIO, USART).
+- ✅ Periféricos avanzados validados con firmware compilado contra los **headers CMSIS oficiales de
+  ST** (`feature_check`): TIM, SPI/I2C con IRQ, RTC, DMA mem-to-mem y request-driven vía DMAMUX.
 - ✅ Periféricos: NVIC/SysTick/SCB, RCC, FLASH (unlock/erase/program), SYSCFG, EXTI, GPIO, USART,
   TIM2/TIM3 (PWM/captura/comparación), SPI1/SPI2 (con IRQ), I2C1/I2C2 (con IRQ), ADC,
   DMA1 + DMAMUX (mem-to-mem y request-driven/DREQ), RTC (calendario + alarma), IWDG/WWDG.
 - ✅ TestKit + Runner + Demo.
-- ✅ 349 tests en verde.
+- ✅ 358 tests en verde.
 - ⏳ Pendiente: DMA TX request-driven dirigido por reloj, request generators del DMAMUX,
   periféricos restantes (LPUART, LPTIM, CRC, RNG) según el firmware objetivo.
 
